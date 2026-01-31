@@ -20,9 +20,9 @@
 eval $( spack load --sh py-checkm-genome )
 
 basedir="$PWD"
-indir="${basedir}/d04_flye"
-tmpdir="${basedir}/d05_QC/tmp_flye_out"
-outdir="${basedir}/d05_QC/checkm"
+indir="${basedir}/d06_polypolish"
+tmpdir="${basedir}/d07_QC/tmp_flye_out"
+outdir="${basedir}/d07_QC/checkm"
 
 #make output directory
 mkdir -p ${outdir}
