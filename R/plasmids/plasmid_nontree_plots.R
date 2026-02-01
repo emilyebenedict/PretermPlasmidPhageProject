@@ -26,8 +26,8 @@ setwd('~/Box Sync/EEB/Dantas/pppp/')
 mash_data = data.frame(read_excel('./data/PretermPlasmidPhageProject_polypolish_circular_mash_checkm_HQgenomes.xlsx'), stringsAsFactors = F)
 
 # reading in patient data
-pts = data.frame(read_excel('./data/250220_P4_GM_Dev_Abx_groupings_updated.xlsx'), stringsAsFactors = F)
-colnames(pts)[2] = 'Infant'
+pts = data.frame(read_excel('./data/260131_P4_GM_dev_meta_updated_groupings_v1.xlsx'), stringsAsFactors = F)
+colnames(pts)[colnames(pts) == 'Patient'] = 'Infant'
 class(pts$Infant) = 'character'
 pts = pts[pts$Cohort == 'P4_cross_sectional',]
 pts$Site = gsub('St. Louis','MO',pts$Site)
