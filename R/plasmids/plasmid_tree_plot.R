@@ -42,8 +42,8 @@ mash_data$Sample = gsub('Sw','SW',mash_data$Sample)
 mash_data$genus = gsub(' .*','', mash_data$simplified_mash_call)
 
 # reading in patient data
-pts = data.frame(read_excel('./data/250220_P4_GM_Dev_Abx_groupings_updated.xlsx'), stringsAsFactors = F)
-colnames(pts)[2] = 'Infant'
+pts = data.frame(read_excel('./data/260131_P4_GM_dev_meta_updated_groupings_v1.xlsx'), stringsAsFactors = F)
+colnames(pts)[colnames(pts) == 'Patient'] = 'Infant'
 class(pts$Infant) = 'character'
 pts$Site = gsub('St. Louis','MO',pts$Site)
 pts$Site = gsub('Oklahoma','OK',pts$Site)
