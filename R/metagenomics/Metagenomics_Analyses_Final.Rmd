@@ -1,0 +1,3655 @@
+---
+title: "P4_Metagenomics_analyses_Final"
+output: html_document
+date: "2026-01-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)          #3.5.0
+library(ggExtra)          #0.10.1
+library(dplyr)            #1.1.2
+library(phyloseq)         #1.46.0
+library(vegan)
+library(Maaslin2)         #1.12.0
+library(ape)              #5.7.1
+library(readxl)           #1.4.3     
+library(microViz)         #0.12.0
+library(ggside)           #0.3.1
+library(patchwork)        #1.2
+library(ComplexHeatmap)   #2.14.0
+library(tidyr)            #1.3.1
+library(readr)            #2.1.5
+library(reshape2)         #1.4.4
+library(rstatix)          #0.7.2
+library(ggpubr)           #0.6.0
+library(NatParksPalettes) #0.2.0
+library(cowplot)          #1.1.2
+library(stringr)          #1.5.1
+library(Boruta)           #8.0.0 
+library(caret)            #6.0-94
+library(VIM)              #6.2.2 
+library(corpcor)
+library(corrplot)
+library(Hmisc)
+library(ANCOMBC)          #2_4.0   
+library(MTXmodel)         #1.2.4
+library(forcats)          #1.0.0
+library(tidyverse)        #2.0.0  
+library(scales)           #1.3.0
+library(microbiome)
+library(lme4)
+library(broom)
+library(MuMIn)
+library(emmeans)
+library(patchwork)
+library(DirichletMultinomial)
+library(lattice)
+library(xtable)
+library(parallel)
+library(RColorBrewer)
+library(e1071)
+library(doParallel)
+library(kableExtra)
+library("anytime") 
+library(tibble) # for rownames_to_column() function
+library(stringr) # for str_squish()
+library(flextable)
+library(officer)
+library(forcats)
+library(tableone)
+library(webshot2)
+library(randomForest)
+
+
+source("GM_development_functions.R")
+source("~/Documents/GitHub/Preterm_Plasmidome/GM_development/customtab.R")
+
+meta_data_path <- "~/Documents/GitHub/Preterm_Plasmidome/GM_development/260202_P4_GM_dev_meta_updated_groupings_v2.xlsx"
+
+cat_var <- c("Sample_ID", "Patient", "Cohort", "abx_group", "BSI_exp_type", "Necrotizing_enterocolitis", "Received_antimicrobials", "Sequencing_runs","duplicate_count","Cohorts","Sex","Delivery_route","Maternal_ethnicity","Maternal_race","Site","Final_disposition",
+             "Para", "Maternal_smoking",	"Maternal_alcohol",	"Maternal_substance_abuse",	"Maternal_preeclampsia",	"Maternal_diabetes",	"Maternal_chorioamnionitis","Maternal_hypertension", "mat_inpt_antimicrobe","mat_outpt_antimicrobial","Multiple_births", "PMA_bin")
+
+num_var <- c("DOL","MOL","abx_exposure_count","Gestational_age_weeks", "Birthweight","Maternal_age_at_delivery","Gravida","antiviral_exposure", "aminoglycoside_exposure","penicillin_exposure","macrolide_exposure","firstgencephalosporin_exposure",
+             "fourthgencephalosporin_exposure","thirdgencephalosporin_exposure","secondgencephalosporin_exposure","lincosamide_exposure",
+             "antifungal_exposure","carbapenem_exposure","other_antimicrobials_exposure","other_non_antimicrobials_exposure","glycopeptide_exposure","med_exposure_count", "morphine_exposure", "fentanyl_exposure", "surfactant_exposure", "acetaminophen_exposure", "caffeine_exposure", "cholecalciferol_vit_d__exposure",	'vitamin_a_exposure',	'famotidine_pepcid__exposure',	'iron_exposure',	'calcium_gluconate_exposure',	'dopamine_exposure',	'adenosine_exposure',	'cosyntropin_cortrosyn_acth__exposure',	'bumetanide_bumax__exposure',	'other_exposure',	'indomethacin_exposure',	'multi_vitamin_with_iron_exposure',	'lasix_exposure',	'atropine_exposure',	'dobutamine_exposure',	'sodium_chloride_exposure',	'levothyroxine_exposure',	'dexamethasone_exposure',	'phenobarbitol_exposure',	'hydrocortisone_exposure',	'ibuprofen_exposure',	'chlorathiazide_diuril__exposure',	'midazolam_versed__exposure',	'potassium_chloride_exposure',	'hepatitis_b_immune_globulin_exposure',	'citric_acid_sodium_citrate_bicitra__exposure',	'pancuronium_or_vecurionium_exposure',	'insulin_exposure',	'immunoglobulin_other_exposure',	'multi_vitamin_no_iron_exposure',	'levocarnitine_exposure',	'digoxin_exposure',	'hydraluronidase_hydase__exposure',	'lorazapam_ativan__exposure',	'sodium_bicarbonate_exposure','hydrochlorathiazide_hydrodiuril__exposure',	'spironolactone_hydrochlorathiazide_aldactazide__exposure',	'tocopherol_acetate_vit_e__exposure','cum_days_formula','cum_days_milk','frac_days_formula', 'frac_days_milk')
+
+custom_colors_abx <- c("None" = "#8E949F", "Early only" = "#44637D", "After only" = "#613921", "Early and after" = "#AAC9ED")
+custom_colors_groups <- c("None" = "#8E949F", "Early only" = "#44637D", "Early and after" = "#AAC9ED", "Near-term" = "#613921")
+custom_colors_names <- c("ABN" = "#8E949F", "EEO" = "#44637D", "EAS" = "#AAC9ED", "Near-term" = "#613921")
+```
+
+# Load data
+```{r}
+## Metaphlan3 tree used in Aura's paper ###
+m3.tree.Jan19 <- ape::read.tree(paste0(getwd(),"/datasets/mpa_v30_CHOCOPhlAn_201901_species_tree.nwk.txt"))
+m3.tree.Jan19$tip.label <- gsub('GCA_[0-9]+\\|', '', m3.tree.Jan19$tip.label)
+
+# Read the metaphlan3 table
+mphlan <- data.frame(read.table("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Metaphlan/250318_P4_GM_dev_metaphlan3_merged_n2585_v2.txt", header = T, sep="\t", skip=1, check.names = FALSE))
+
+# R adds an "X" to column names that start with a number. Steps to remove this below
+#colnames(mphlan) <- gsub("^X([0-9])", "\\1", colnames(mphlan))
+colnames(mphlan) <- as.character(colnames(mphlan))
+
+metadata <- read_excel(meta_data_path)
+
+## Processing data for phyloseq
+rownames(mphlan) <- mphlan$clade_name
+mphlan$clade_name <- NULL
+
+## Create species data for phyloseq 
+# keep rows with species info 
+#mphlan.species <- mphlan
+mphlan.species <- mphlan[grepl('s__', rownames(mphlan)), ]
+# Drop rows with SBG (species level genome bins)
+mphlan.species <- mphlan.species[!grepl('t__', rownames(mphlan.species)), ]
+mphlan.species <- mphlan.species %>% dplyr::select_if(~sum(.) != 0)
+mphlan.species <- as.matrix(mphlan.species)
+
+## Create taxa table
+species <- data.frame(Names = rownames(mphlan.species))
+species <- data.frame(do.call('rbind', strsplit(as.character(species$Names), '|', fixed = TRUE)))
+rownames(species) <- rownames(mphlan.species)
+colnames(species) <- c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species')
+species <- as.matrix(species)
+
+## Metadata
+rows_metadata <- rownames(metadata)[colnames(mphlan.species) %in% metadata$Sample_ID_R_final]
+metadata <- data.frame(metadata)
+rownames(metadata) <- metadata$Sample_ID_R_final
+
+# Set categorical variables to factor
+metadata[,cat_var] <- lapply(metadata[,cat_var], factor)
+# Set numerical variables to numeric
+metadata[,num_var] <- lapply(metadata[,num_var], as.numeric)
+print(dim(metadata))
+
+# Differences between metadata rows and metaphlan column names 
+## These are samples that we have dropped because we have other samples from the same DOL  
+print(setdiff(colnames(mphlan.species), rownames(metadata)))
+
+ps <- phyloseq(otu_table(mphlan.species, taxa_are_rows = TRUE),
+               sample_data(metadata),
+               tax_table(species), 
+               phy_tree(m3.tree.Jan19)) 
+
+#ps.filt <- prune_taxa(taxa_sums(ps)>0.01, ps)
+ps.filt <- filter_taxa(ps, function(x) mean(x) > 0.01, TRUE)
+ps.filt  <- transform_sample_counts(ps.filt, function(x) (x / sum(x))*100)
+
+### Filter to DOL 0-60 and remove After only infants ########
+ps_filt_dol60 <- ps.filt %>% subset_samples(DOL <= 60) %>% subset_samples(abx_group_updated != "After only")
+ps_filt_dol60_meta <- data.frame(sample_data(ps_filt_dol60))
+
+sample_data(ps_filt_dol60)$DOL_bin <- factor(sample_data(ps_filt_dol60)$DOL_bin)
+sample_data(ps_filt_dol60)$abx_group_updated <- factor(sample_data(ps_filt_dol60)$abx_group_updated,
+                                               levels = c("Early and after","Early only","None"))
+
+###################### Merge with P4 cross-sectional cohort ###########
+p4_mphlan <- data.frame(read.table("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Metaphlan/251020_P4_merged_metaphlan_n146.txt", header = T, sep="\t", check.names = FALSE))
+
+## Processing data for phyloseq
+rownames(p4_mphlan) <- p4_mphlan$clade_name
+p4_mphlan$clade_name <- NULL
+
+new_names <- colnames(p4_mphlan)
+new_names <- gsub("^X", "", new_names)
+new_names <- gsub("_", ".", new_names)
+new_names <- paste0("p4_", new_names)
+
+colnames(p4_mphlan) <- new_names
+
+## Create species data for phyloseq 
+# keep rows with species info 
+p4_mphlan.species <- p4_mphlan[grepl('s__', rownames(p4_mphlan)), ]
+# Drop rows with SBG (species level genome bins)
+p4_mphlan.species <- p4_mphlan.species[!grepl('t__', rownames(p4_mphlan.species)), ]
+p4_mphlan.species <- p4_mphlan.species %>% dplyr::select_if(~sum(.) != 0)
+p4_mphlan.species <- as.matrix(p4_mphlan.species)
+
+## Create taxa table
+p4_species <- data.frame(Names = rownames(p4_mphlan.species))
+p4_species <- data.frame(do.call('rbind', strsplit(as.character(p4_species$Names), '|', fixed = TRUE)))
+rownames(p4_species) <- rownames(p4_mphlan.species)
+colnames(p4_species) <- c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species')
+p4_species <- as.matrix(p4_species)
+
+# Differences between metadata rows and metaphlan column names 
+## These are samples that we have dropped because we have other samples from the same DOL  
+print(setdiff(colnames(p4_mphlan.species), rownames(metadata)))
+
+ps_p4 <- phyloseq(otu_table(p4_mphlan.species, taxa_are_rows = TRUE),
+               sample_data(metadata),
+               tax_table(p4_species)) 
+
+#ps.filt <- prune_taxa(taxa_sums(ps)>0.01, ps)
+ps_p4.filt <- filter_taxa(ps_p4, function(x) mean(x) > 0.01, TRUE)
+ps_p4.filt  <- transform_sample_counts(ps_p4.filt, function(x) (x / sum(x))*100)
+
+ps_p4_meta <- data.frame(phyloseq::sample_data(ps_p4.filt))
+
+ps_p4.filt <- ps_p4.filt %>% subset_samples(abx_group_updated != "After only")
+ps_p4.filt_meta <- data.frame(sample_data(ps_p4.filt))
+
+sample_data(ps_p4.filt)$DOL_bin <- factor(sample_data(ps_p4.filt)$DOL_bin)
+sample_data(ps_p4.filt)$abx_group_updated <- factor(sample_data(ps_p4.filt)$abx_group_updated,
+                                               levels = c("Early and after","Early only","None"))
+
+merged_ps <- merge_phyloseq(ps_filt_dol60, ps_p4.filt)
+merged_ps_meta <- data.frame(sample_data(merged_ps))
+
+merged_ps_meta <- merged_ps_meta %>% mutate(abx_group_names = case_when(abx_group_updated == "Early only" ~ "EEO",
+                                                                          abx_group_updated == "Early and after" ~ "EAS",
+                                                                          abx_group_updated == "None" ~ "ABN"))
+
+merged_ps_meta$abx_group_names <- factor(merged_ps_meta$abx_group_names, levels = c("EAS", "EEO", "ABN"))
+sample_data(merged_ps) <- merged_ps_meta
+
+#save(merged_ps, file = "260202_merged_ps.RData")
+
+#write.csv(merged_ps_meta, "260130_P4_GM_dev_metadata.csv", row.names = F)
+
+```
+
+### Load near-term data
+```{r}
+drewg_meta <- read_excel("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Metadata/240515_drewg_sample_metadata_v1.xlsx")
+
+drewg_meta <- drewg_meta %>% filter(Cohort == "Gasparrini_term") 
+drewg_meta <- drewg_meta[,1:7]
+
+extra_meta <- read_excel("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Metadata/Drewg_term_metadata.xlsx") %>%
+  filter(Group == "Term") %>% select(Sample, GestationalAgeWeeks, Birthweight,
+                                     Gender, DeliveryMode, TotalAntimicrobialsDays)
+
+extra_meta <- extra_meta %>% dplyr::rename(Sample_ID = Sample, 
+                                    Gestational_age_weeks = GestationalAgeWeeks,
+                                    Sex = Gender,
+                                    Delivery_route = DeliveryMode,
+                                    abx_exposure_count = TotalAntimicrobialsDays)
+
+drewg_meta_final <- merge(drewg_meta, extra_meta, by = "Sample_ID")
+
+drewg_meta_dol60 <- drewg_meta_final %>% filter(DOL <= 60)
+
+drewg_mphln <- mphlan <- data.frame(read.table("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Metaphlan/251016_DrweG_term_n162_metaphlan3_merged.txt", header = T, sep="\t", skip=1, check.names = FALSE))
+rownames(drewg_mphln) <- drewg_mphln$clade_name
+drewg_mphln$clade_name <- NULL
+
+drewg_mphlan.species <- drewg_mphln[grepl('s__', rownames(drewg_mphln)), ]
+# Drop rows with SBG (species level genome bins)
+drewg_mphlan.species <- drewg_mphlan.species[!grepl('t__', rownames(drewg_mphlan.species)), ]
+drewg_mphlan.species <- drewg_mphlan.species %>% dplyr::select_if(~sum(.) != 0)
+drewg_mphlan.species <- as.matrix(drewg_mphlan.species)
+
+## Create taxa table
+drewg_species <- data.frame(Names = rownames(drewg_mphlan.species))
+drewg_species <- data.frame(do.call('rbind', strsplit(as.character(drewg_species$Names), '|', fixed = TRUE)))
+rownames(drewg_species) <- rownames(drewg_mphlan.species)
+colnames(drewg_species) <- c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species')
+drewg_species <- as.matrix(drewg_species)
+
+## Metadata
+rows_metadata <- rownames(drewg_meta_final)[colnames(drewg_mphlan.species) %in% drewg_meta_final$Sample_ID]
+drewg_meta_final <- data.frame(drewg_meta_final)
+rownames(drewg_meta_final) <- drewg_meta_final$Sample_ID
+
+drewg_cat_var <- c("Sample_ID", "Patient", "Cohort", "Sex", "Delivery_route")
+drewg_num_var <- c("DOL", "DOL_months", "PostmenstrualAgeDays","PostmenstrualAgeWeeks","Gestational_age_weeks","Birthweight",
+                   "abx_exposure_count")
+# Set categorical variables to factor
+drewg_meta_final[,drewg_cat_var] <- lapply(drewg_meta_final[,drewg_cat_var], factor)
+# Set numerical variables to numeric
+drewg_meta_final[,drewg_num_var] <- lapply(drewg_meta_final[,drewg_num_var], as.numeric)
+print(dim(drewg_meta_final))
+
+# Differences between metadata rows and metaphlan column names 
+## These are samples that we have dropped because we have other samples from the same DOL  
+print(setdiff(colnames(drewg_mphlan.species), rownames(drewg_meta_final)))
+
+# 160 samples and 341 species
+ps_term <- phyloseq(otu_table(drewg_mphlan.species, taxa_are_rows = TRUE),
+               sample_data(drewg_meta_final),
+               tax_table(drewg_species)) 
+
+# 160 samples and 179 species
+ps_term <- filter_taxa(ps_term, function(x) mean(x) > 0.01, TRUE)
+ps_term  <- transform_sample_counts(ps_term, function(x) (x / sum(x))*100)
+
+### Filter to DOL 0-60 and remove After only infants ########
+ps_term_dol100 <- ps_term %>% subset_samples(DOL <= 100)
+
+ps_term_meta <- data.frame(phyloseq::sample_data(ps_term_dol100))
+
+# Filter out samples past DOL 100 and create DOL bin
+ps_term_meta <- ps_term_meta %>%
+  mutate(DOL_bin = cut(DOL,
+                       breaks = seq(0,100, by = 10),
+                       labels = paste("DOL", seq(1, 91, by = 10), "-", seq(10, 100, by = 10)),
+                       include.lowest = TRUE,
+                       right = TRUE))
+
+
+sample_data(ps_term_dol100) <- ps_term_meta
+
+ps_term_dol60 <- ps_term_dol100 %>% subset_samples(DOL <= 60) 
+ps_term_dol60_meta <- data.frame(sample_data(ps_term_dol60))
+
+sample_data(ps_term_dol60)$DOL_bin <- factor(sample_data(ps_term_dol60)$DOL_bin)
+sample_data(ps_term_dol60)$abx_group_updated <- "Near-term"
+
+ps_term_dol60_meta <- data.frame(sample_data(ps_term_dol60))
+
+breaks <- seq(23, 48, by = 3)
+labels <- paste("PMA", head(breaks, -1), "-",tail(breaks, -1))
+
+ps_term_dol60_meta$PMA_bin <- cut(
+  ps_term_dol60_meta$PostmenstrualAgeWeeks,
+  breaks = breaks,
+  labels = labels,
+  right = FALSE,  # left-inclusive, i.e., [23,26)
+  include.lowest = TRUE
+)
+
+
+sample_data(ps_term_dol60) <- ps_term_dol60_meta
+
+## Merge preterm and term phyloseq objects #########
+ps_term_dol60_meta <- ps_term_dol60_meta %>% dplyr::rename(Sample_ID_R_final = Sample_ID) 
+pterm_meta_simple <- merged_ps_meta %>% select(any_of(colnames(ps_term_dol60_meta)))
+nterm_meta_simple <- ps_term_dol60_meta %>% select(everything(), -c(DOL_months, PostmenstrualAgeDays)) 
+nterm_meta_simple$Sample_ID_R_final <- as.character(nterm_meta_simple$Sample_ID_R_final)
+nterm_meta_simple$Delivery_route <- as.character(nterm_meta_simple$Delivery_route)
+nterm_meta_simple$Delivery_route[nterm_meta_simple$Delivery_route == "Cesarean"] <- "Cesarean Section"
+nterm_meta_simple$Delivery_route <- factor(nterm_meta_simple$Delivery_route)
+
+
+ps_pterm_simple <- merged_ps
+sample_data(ps_pterm_simple) <- pterm_meta_simple
+
+ps_nterm_simple <- ps_term_dol60
+sample_data(ps_nterm_simple) <- nterm_meta_simple
+
+ps_infants <- merge_phyloseq(ps_pterm_simple, ps_nterm_simple)
+ps_infants_meta <- data.frame(sample_data(ps_infants))
+ps_infants_meta$abx_group_updated <- factor(ps_infants_meta$abx_group_updated)
+ps_infants_meta <- ps_infants_meta %>% mutate(abx_group_names = case_when(abx_group_updated == "Early only" ~ "EEO",
+                                                                          abx_group_updated == "Early and after" ~ "EAS",
+                                                                          abx_group_updated == "None" ~ "ABN",
+                                                                          abx_group_updated == "Near-term" ~ "Near-term"))
+ps_infants_meta$abx_group_names <- factor(ps_infants_meta$abx_group_names, levels = c("EAS", "EEO", "ABN", "Near-term"))
+#save(ps_infants, file = "251118_Preterm_near-term_merged_object.RData")
+
+###### Add site to metadata #########
+preterm_site <- merged_ps_meta %>% select(Sample_ID_R_final, Site)
+ps_infants_meta2 <- ps_infants_meta %>% left_join(preterm_site, by = "Sample_ID_R_final") %>% mutate(Site = if_else(is.na(Site), "Home", Site))
+ps_infants_meta2$Site <- factor(ps_infants_meta2$Site)
+
+### Update cohort to study ###
+ps_infants_meta2 <- ps_infants_meta2 %>% mutate(Study = case_when(Cohort == "BSI" ~ "Schwartz_et_al",
+                                                                  Cohort == "Gasparrini_preterm" ~ "Gasparrini_et_al",
+                                                                  Cohort == "Gasparrini_term" ~ "Gasparrini_et_al",
+                                                                  Cohort == "Molly" ~ "Gibson_et_al",
+                                                                  Cohort == "NEC_control" ~ "Thanert_et_al",
+                                                                  Cohort == "No_abx_preterm" ~ "This_study",
+                                                                  Cohort == "P4_cross_sectional" ~ "This_study"))
+ps_infants_meta2$Study <- factor(ps_infants_meta2$Study)
+rownames(ps_infants_meta2) <- ps_infants_meta2$Sample_ID_R_final
+sample_data(ps_infants) <- ps_infants_meta2
+
+ps_infants_meta <- data.frame(sample_data(ps_infants))
+```
+
+Table 1
+```{r}
+library(kableExtra)
+library("anytime") 
+library(tibble) # for rownames_to_column() function
+library(stringr) # for str_squish()
+library(flextable)
+library(officer)
+library(forcats)
+library(tableone)
+library(webshot2)
+
+source("~/Documents/GitHub/Preterm_Plasmidome/GM_development/customtab.R")
+
+
+meta_pt <- data.frame(sample_data(merged_ps))
+
+# Set categorical variables as factors !!!!!!!!!!! Modify these as needed later !!!!!!!!!!!!!!!!!!!!
+categorical_vars <- c('Patient', 'Site','abx_group', 'Sex', 'Delivery_route', 'Necrotizing_enterocolitis', 'Cohort')
+
+meta_pt[,categorical_vars] <- lapply(meta_pt[,categorical_vars], factor)
+
+numerical_vars <- c("Birthweight", "abx_exposure_count", "Gestational_age_weeks")
+meta_pt[,numerical_vars] <- lapply(meta_pt[,numerical_vars], as.numeric)
+
+## All numerical variables are non-normal so we'll use median (IQR) instead of mean (SD)
+normality_results <- lapply(numerical_vars, function(v) {
+  p <- shapiro.test(meta_pt[[v]])$p.value
+  data.frame(variable = v, p_value = p)
+}) %>% bind_rows()
+
+
+# Generate metadata comparison table 
+comp_vars <- c("Birthweight", "abx_exposure_count", "Gestational_age_weeks", 'Site','Cohort', 'Sex', 'Delivery_route', 'Necrotizing_enterocolitis')
+
+
+tab_pt <- CreateTableOne(vars=comp_vars,
+                           strata='abx_group_names', 
+                           data=meta_pt)
+tab_plot_pt <- print(tab_pt, 
+  showAllLevels = TRUE,
+  quote        = FALSE,
+  noSpaces     = TRUE,
+  test         = TRUE,
+  contDigits   = 1,
+  nonnormal    = numerical_vars,  
+  printToggle  = FALSE,
+  dropEqual    = TRUE,
+  explain      = FALSE)
+
+# Convert to dataframe
+tab_pt_df <- as.data.frame(tab_plot_pt) %>% rownames_to_column(var = "Variable")
+
+# Set Table header
+header <- str_squish(str_remove("Table 1. Infant demographics", "\n"))
+# Set Table footer
+footer <- str_squish(str_remove("Numbers are either No. or mean values", "\n"))
+# Set custom_tab() defaults
+customtab_defaults()
+# Create the flextable object
+flextable_processed_samples <- custom_tab(tab_pt_df, header, footer)
+
+# Save as word .docx
+save_as_docx(flextable_processed_samples, path = "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/Re-grouped/Metadata/Table1.docx",
+pr_section = prop_section(page_size = page_size(orient = "landscape"), type = "continuous"))
+
+unique_infants_pt <- meta_pt %>%
+  group_by(abx_group_updated, Site) %>%
+  summarise(N = n_distinct(Patient), .groups = "drop_last") %>%
+  mutate(
+    total_site = sum(N),                 # total unique patients at this site
+    prop = N / total_site                # proportion per group
+  ) %>%
+  ungroup()
+write.csv(unique_infants_pt, "unique_infants_site_dist.csv", row.names = F)
+
+abxN_meta <- meta_pt %>% filter(abx_group_updated == "None")
+write.csv(abxN_meta, "251126_abxN_samples_meta.csv", row.names = F)
+
+# 1. Count number of unique group labels per infant
+group_changes <- ps_infants_meta %>%
+  group_by(Patient) %>%
+  dplyr::summarise(
+    groups = n_distinct(abx_group_updated),
+    unique_groups = paste(sort(unique(abx_group_updated)), collapse = ", ")
+  ) %>%
+  ungroup()
+write.csv(group_changes, "260202_infants_that_change_abx_groups.csv", row.names = F)
+
+###########-- Including near-term infants in the table ----############
+meta_pt <- ps_infants_meta
+
+eeo <- ps_infants_meta %>% filter(abx_group_names == "EEO")
+abn <- ps_infants_meta %>% filter(abx_group_names == "ABN")
+eas <- ps_infants_meta %>% filter(abx_group_names == "EAS")
+
+meta_pt$Delivery_route[meta_pt$Delivery_route == "Cesarean"] <- "Cesarean Section"
+meta_pt$Cohort[meta_pt$Cohort == "BSI_new"] <- "BSI"
+
+# Set categorical variables as factors !!!!!!!!!!! Modify these as needed later !!!!!!!!!!!!!!!!!!!!
+categorical_vars <- c('Patient','abx_group_names', 'Sex', 'Delivery_route', 'Cohort')
+
+meta_pt[,categorical_vars] <- lapply(meta_pt[,categorical_vars], factor)
+meta_pt$Delivery_route <- factor(meta_pt$Delivery_route, levels = c("Cesarean Section", "Vaginal"))
+meta_pt$Cohort <- factor(meta_pt$Cohort, levels = c("Molly", "Gasparrini_preterm", "Gasparrini_term", "BSI", "NEC_control", "No_abx_preterm", "P4_cross_sectional"))
+
+numerical_vars <- c("Birthweight", "abx_exposure_count", "Gestational_age_weeks")
+meta_pt[,numerical_vars] <- lapply(meta_pt[,numerical_vars], as.numeric)
+
+## All numerical variables are non-normal so we'll use median (IQR) instead of mean (SD)
+
+# Generate metadata comparison table 
+comp_vars <- c("Birthweight", "abx_exposure_count", "Gestational_age_weeks",'Cohort', 'Sex', 'Delivery_route')
+
+
+tab_pt <- CreateTableOne(vars=comp_vars,
+                           strata='abx_group_names', 
+                           data=meta_pt)
+tab_plot_pt <- print(tab_pt, 
+  showAllLevels = TRUE,
+  quote        = FALSE,
+  noSpaces     = TRUE,
+  test         = TRUE,
+  contDigits   = 1,
+  nonnormal    = numerical_vars,  
+  printToggle  = FALSE,
+  dropEqual    = TRUE,
+  explain      = FALSE)
+
+# Convert to dataframe
+tab_pt_df <- as.data.frame(tab_plot_pt) %>% rownames_to_column(var = "Variable")
+
+# Set Table header
+header <- str_squish(str_remove("Table 1. Infant demographics", "\n"))
+# Set Table footer
+footer <- str_squish(str_remove("Numbers are either No. or mean values", "\n"))
+# Set custom_tab() defaults
+customtab_defaults()
+# Create the flextable object
+flextable_processed_samples <- custom_tab(tab_pt_df, header, footer)
+
+# Save as word .docx
+save_as_docx(flextable_processed_samples, path = "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/Re-grouped/Metadata/Table1_near-term.docx",
+pr_section = prop_section(page_size = page_size(orient = "landscape"), type = "continuous"))
+
+
+# 2. Filter infants who have more than one group label
+changed_infants <- group_changes %>%
+  filter(groups > 1)
+
+# 3. View how many and which infants changed groups
+n_changed <- nrow(changed_infants)
+print(paste("Number of infants who changed group:", n_changed))
+print(changed_infants)
+
+```
+
+
+## Alpha diversity
+```{r}
+ps.filt.trans <- transform_sample_counts(ps_infants, function(x) trunc(x*100000))
+adiv <- estimate_richness(ps.filt.trans, measures=c('Observed', 'Shannon'))
+
+sample_data(ps_infants)$Richness <- adiv$Observed
+sample_data(ps_infants)$Shannon <- adiv$Shannon
+
+ps.filt.meta <- data.frame(phyloseq::sample_data(ps_infants))
+#write.csv(ps.filt.meta, "260201_ps_filt_meta.csv", row.names = F)
+
+counts_by_bin <- ps.filt.meta %>%
+  filter(!is.na(Richness), !is.na(abx_group_names)) %>%
+  mutate(abx_group_names = droplevels(abx_group_names)) %>%
+  count(DOL_bin, abx_group_names, name = "n") %>%
+  group_by(DOL_bin) %>% mutate(groups_present = n_distinct(abx_group_names)) %>% ungroup()
+write.csv(counts_by_bin, "260202_abx_exposure_n_by_group_names.csv", row.names = F)
+
+## There are repeat samples and differences in DOL so we need to use linear models to account for these confounders
+patient_repeats_per_DOL_bin <- ps.filt.meta %>%
+  group_by(DOL_bin, Patient) %>% summarise(n_samples = n(), .groups = "drop")
+
+########### Richness ##################
+### Perform stat test and plot #######
+lmer_emmeans_richness <- perform_emmeans_lmer(df = ps.filt.meta, facet_var = "DOL_bin", x_var = "abx_group_names", y_var = "Richness",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_richness, "260202_lmer_emmeans_richness.csv", row.names = F)
+## Plot alpha diversity barplot binned by DOL 
+richness_abx_dol <- ggplot(ps.filt.meta, aes(x = abx_group_names, y = Richness, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(width=0.2)+
+  scale_fill_manual(values=custom_colors_names)+
+  facet_wrap(~ DOL_bin, nrow = 2, strip.position = "top") +
+  labs(
+    x = "Antibiotic Exposure Group", 
+    y = "Species Richness", 
+    fill = "Antibiotic Exposure Group",
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1, color = "black"),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+
+
+richness_abx_dol_emm_lmer <- richness_abx_dol + stat_pvalue_manual(
+  lmer_emmeans_richness,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.6, facet.y = "bin"
+)
+ggsave("260202_P4_GM_Dev_Richness_abx_group_DOL_bp_emmeans.pdf", plot = richness_abx_dol_emm_lmer, bg = "transparent", width = 20, height = 10)
+
+
+########### Shannon ##################
+### Perform stat test and plot #######
+lmer_emmeans_shannon <- perform_emmeans_lmer(df = ps.filt.meta, facet_var = "DOL_bin", x_var = "abx_group_names", y_var = "Shannon",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_shannon, "260202_lmer_emmeans_shannon.csv", row.names = F)
+
+shannon_abx_dol <- ggplot(ps.filt.meta, aes(x = abx_group_names, y = Shannon, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(width=0.2)+
+  scale_fill_manual(values=custom_colors_names)+
+  facet_wrap(~ DOL_bin, nrow = 2, strip.position = "top") +
+  labs(
+    x = "Antibiotic Exposure Group", 
+    y = "Shannon Diversity", 
+    fill = "Antibiotic Exposure Group",
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1, color = "black"),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+
+
+shannon_abx_dol_emm_lmer <- shannon_abx_dol + stat_pvalue_manual(
+  lmer_emmeans_shannon,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.6, facet.y = "bin"
+)
+ggsave("260202_P4_GM_Dev_Shannon_abx_group_DOL_bp_emmeans.pdf", plot = shannon_abx_dol_emm_lmer, bg = "transparent", width = 20, height = 10)
+
+###### Facet by abx group #######
+lmer_emmeans_shannon_DOL <- perform_emmeans_lmer(df = ps.filt.meta, facet_var = "abx_group_names", x_var = "DOL_bin", y_var = "Shannon",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_shannon_DOL, "260202_lmer_emmeans_shannon_by_DOL.csv", row.names = F)
+
+shannon_abx_dol2 <- ggplot(ps.filt.meta, aes(x = DOL_bin, y = Shannon, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(width=0.2)+
+  scale_fill_manual(values=custom_colors_names)+
+  facet_wrap(~ abx_group_names, nrow = 2, strip.position = "top") +
+  labs(
+    x = "DOL bin", 
+    y = "Shannon Diversity", 
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1, color = "black"),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.position = "none",
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+ggsave("260202_P4_GM_Dev_Shannon_abx_group_facet_DOL_bp.pdf", plot = shannon_abx_dol2, bg = "transparent", width = 20, height = 10)
+
+lmer_emmeans_shannon_DOL <- lmer_emmeans_shannon_DOL %>% separate(contrast, into = c("group1", "group2"), sep = "\\) - \\(") %>%
+  mutate(
+    group1 = gsub("^\\(|\\)$", "", group1),
+    group2 = gsub("^\\(|\\)$", "", group2)
+  )
+
+shannon_abx_dol2_emm_lmer <- shannon_abx_dol2 + stat_pvalue_manual(
+  lmer_emmeans_shannon_DOL,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.4, facet.y = "bin"
+)
+ggsave("260202_P4_GM_Dev_Shannon_abx_group_facet_DOL_bp_emmeans.pdf", plot = shannon_abx_dol2_emm_lmer, bg = "transparent", width = 20, height = 10)
+
+
+lmer_emmeans_richness_DOL <- perform_emmeans_lmer(df = ps.filt.meta, facet_var = "abx_group_names", x_var = "DOL_bin", y_var = "Richness",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_richness_DOL, "260202_lmer_emmeans_richness_by_DOL.csv", row.names = F)
+
+richness_abx_dol2 <- ggplot(ps.filt.meta, aes(x = DOL_bin, y = Richness, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(width=0.2)+
+  scale_fill_manual(values=custom_colors_names)+
+  facet_wrap(~ abx_group_names, nrow = 2, strip.position = "top") +
+  labs(
+    x = "DOL bin", 
+    y = "Species Richness", 
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1, color = "black"),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.position = "none",
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+ggsave("260202_P4_GM_Dev_Richness_abx_group_facet_DOL_bp.pdf", plot = richness_abx_dol2, bg = "transparent", width = 20, height = 10)
+
+lmer_emmeans_richness_DOL <- lmer_emmeans_richness_DOL %>% separate(contrast, into = c("group1", "group2"), sep = "\\) - \\(") %>%
+  mutate(
+    group1 = gsub("^\\(|\\)$", "", group1),
+    group2 = gsub("^\\(|\\)$", "", group2)
+  )
+
+richness_abx_dol2_emm_lmer <- richness_abx_dol2 + stat_pvalue_manual(
+  lmer_emmeans_richness_DOL,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.4, facet.y = "bin"
+)
+ggsave("260202_P4_GM_Dev_Richness_abx_group_facet_DOL_bp_emmeans.pdf", plot = richness_abx_dol2_emm_lmer, bg = "transparent", width = 20, height = 10)
+
+###--- Run lmer and emmeans separately on term dataset ######
+nterm_meta <- ps.filt.meta %>% filter(abx_group_names == "Near-term")
+lmer_emmeans_richness_DOL_nterm <- perform_emmeans_lmer(df = nterm_meta, facet_var = "abx_group_names", x_var = "DOL_bin", y_var = "Richness",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_richness_DOL_nterm, "260203_lmer_emmeans_richness_by_DOL_nterm.csv", row.names = F)
+
+lmer_emmeans_shannon_DOL_nterm <- perform_emmeans_lmer(df = nterm_meta, facet_var = "abx_group_names", x_var = "DOL_bin", y_var = "Shannon",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_shannon_DOL_nterm, "260203_lmer_emmeans_shannon_by_DOL_nterm.csv", row.names = F)
+
+```
+
+ARG Comparison 
+```{r}
+#look at overall ARG burden between groups
+##load shortbred output
+arg.full <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/250905_P4_GM_Dev_ShortBRED_merged_output_n2585.txt"))
+arg.full <- arg.full %>% mutate(Sample_ID_R_final = gsub("-", ".", paste0("p4_", Sample)))
+arg.p4 <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/251022_GM_Dev_P4_shortBRED_joint_output.txt"))
+arg.p4 <- arg.p4 %>% mutate(Sample_ID_R_final = paste0("p4_", gsub("_", ".", Sample)))
+arg_df <- rbind(arg.full, arg.p4)
+
+# starts_with_number <- grepl("^[0-9]", arg.full$Sample)
+# modified_column <- arg.full$Sample
+# modified_column[starts_with_number] <- paste0("p4_", gsub("-", ".", arg.full$Sample[starts_with_number]))
+# arg.full$Sample_ID_R_final <- modified_column
+
+arg.wide <- as.data.frame(dcast(arg_df, Sample_ID_R_final ~ Family, value.var = 'Count', fun.aggregate = sum))
+row.names(arg.wide) <- arg.wide$Sample_ID_R_final
+arg.wide <- arg.wide[, c(-1)]
+
+##sum counts to get RPKM per sample
+arg.wide$RPKM <- rowSums(arg.wide)
+
+##get ARG richness
+arg.wide$Richness <- specnumber(arg.wide[, 1:ncol(arg.wide)-1])
+
+# Merge arg.wide to metadata 
+## First add a paperID column to merge with metadata file
+arg.wide$Sample_ID_R_final <- row.names(arg.wide)
+# Subset arg.wide to columns we want
+arg.want <- arg.wide %>%
+  select(c(Sample_ID_R_final, RPKM, Richness)) %>% dplyr::rename(ShortBRED_richness = Richness)
+
+# Merge with metadata
+arg.df <- merge(ps_infants_meta, arg.want, by = "Sample_ID_R_final")
+
+arg.df <- arg.df %>% filter(abx_group_updated != "After only") 
+
+##### Read in term ARG data ######
+arg_term <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/251016_DrewG_term_n162_shortbred_merged.txt"))
+
+arg_term_wide <- as.data.frame(dcast(arg_term, Sample ~ Family, value.var = 'Count', fun.aggregate = sum))
+row.names(arg_term_wide) <- arg_term_wide$Sample
+arg_term_wide <- arg_term_wide[, c(-1)]
+
+##sum counts to get RPKM per sample
+arg_term_wide$RPKM <- rowSums(arg_term_wide)
+
+##get ARG richness
+arg_term_wide$Richness <- specnumber(arg_term_wide[, 1:ncol(arg_term_wide)-1])
+
+# Merge arg.wide to metadata 
+## First add a paperID column to merge with metadata file
+arg_term_wide$Sample <- row.names(arg_term_wide)
+# Subset arg.wide to columns we want
+arg_term_want <- arg_term_wide %>%
+  select(c(Sample, RPKM, Richness)) %>% dplyr::rename(Sample_ID_R_final = Sample, ShortBRED_richness = Richness)
+
+# Merge with metadata
+term_arg.df <- merge(ps_infants_meta, arg_term_want, by = "Sample_ID_R_final") 
+
+#### Merge with preterm ARG data ###
+arg.df2 <- arg.df %>% 
+  select(Sample_ID_R_final, Patient, Study, Site, DOL_bin, Gestational_age_weeks, abx_group_updated, abx_group_names, RPKM, ShortBRED_richness)
+term_arg.df2 <- term_arg.df %>% select(Sample_ID_R_final, Patient, Study, Site, DOL_bin, Gestational_age_weeks, abx_group_updated, abx_group_names, RPKM, ShortBRED_richness)
+
+arg_full <- rbind(arg.df2, term_arg.df2)
+write.csv(arg_full, "260130_P4_GM_Dev_ARG_data.csv", row.names = F)
+
+
+###### Plot and compare using linear mixed models ###########
+lmer_emmeans_arg_rpkm <- perform_emmeans_lmer(df = arg_full, facet_var = "DOL_bin", x_var = "abx_group_names", y_var = "RPKM",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_arg_rpkm, "260202_lmer_emmeans_ARG_rpkm.csv", row.names = F)
+
+counts_by_bin <- arg_full %>%
+  filter(!is.na(RPKM), !is.na(abx_group_names)) %>%
+  mutate(abx_group_names = droplevels(abx_group_names)) %>%
+  count(DOL_bin, abx_group_names, name = "n") %>%
+  group_by(DOL_bin) %>% mutate(groups_present = n_distinct(abx_group_names)) %>% ungroup()
+write.csv(counts_by_bin, "260202_abx_exposure_n_by_group_shortbred_comparison.csv", row.names = F)
+
+shortbred_hits_rpkm <- ggplot(arg_full, aes(x = abx_group_names, y = RPKM, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(shape = 17, aes(fill = abx_group_names), color = "black", width=0.2, size = 2, alpha = 0.4)+
+  scale_fill_manual(values=custom_colors_names)+
+  scale_color_manual(values=custom_colors_names) +
+  facet_wrap(~ DOL_bin, nrow = 2, strip.position = "top") +
+  labs(
+    x = "Antibiotic Exposure Group", 
+    y = "Total ShortBRED hits (RPKM)", 
+    fill = "Antibiotic Exposure Group",
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1, color = "black"),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+
+shortbred_hits_rpkm_stat  <- shortbred_hits_rpkm + stat_pvalue_manual(
+  lmer_emmeans_arg_rpkm,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.6, facet.y = "bin"
+)
+ggsave("260202_P4_GM_Dev_ARG_RPKM_abx_group_DOL_bp_emmeans.pdf", plot = shortbred_hits_rpkm_stat, bg = "transparent", width = 20, height = 10)
+
+########### Total ShortBRED Hits (Richness) #########
+lmer_emmeans_arg_richness <- perform_emmeans_lmer(df = arg_full, facet_var = "DOL_bin", x_var = "abx_group_names", y_var = "ShortBRED_richness",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_arg_richness, "260202_lmer_emmeans_ARG_richness.csv", row.names = F)
+
+shortbred_hits_richness <- ggplot(arg_full, aes(x = abx_group_names, y = ShortBRED_richness, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(shape = 17, aes(fill = abx_group_names), color = "black", width=0.2, size = 2, alpha = 0.4)+
+  scale_fill_manual(values=custom_colors_names)+
+  scale_color_manual(values=custom_colors_names) +
+  facet_wrap(~ DOL_bin, nrow = 2, strip.position = "top") +
+  labs(
+    x = "Antibiotic Exposure Group", 
+    y = "Total ShortBRED hits (Unique ARGs)", 
+    fill = "Antibiotic Exposure Group",
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+
+shortbred_hits_richness_stat <- shortbred_hits_richness + stat_pvalue_manual(
+  lmer_emmeans_arg_richness,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.6, facet.y = "bin"
+)
+ggsave("260202_P4_GM_Dev_ARG_Richness_abx_group_DOL_bp_emmeans.pdf", plot = shortbred_hits_richness_stat, bg = "transparent", width = 20, height = 10)
+
+###################-------------Richness normalized ARGs------------#######################
+### Merge ARG data with phyloseq metadata ###
+arg_full_want <- arg_full %>% select(Sample_ID_R_final, RPKM, ShortBRED_richness) %>% 
+  dplyr::rename(ShortBRED_RPKM = RPKM)
+ps.filt.meta2 <- merge(ps.filt.meta, arg_full_want, by = "Sample_ID_R_final")
+
+ps.filt.meta2$norm_arg_abund <- ps.filt.meta2$ShortBRED_RPKM / ps.filt.meta2$Richness
+#write.csv(ps.filt.meta2, "260202_P4_GM_Dev_all_infants_meta_alpha_ARGs.csv", row.names = F)
+
+lmer_emmeans_norm_arg_richness <- perform_emmeans_lmer(df = ps.filt.meta2, facet_var = "DOL_bin", x_var = "abx_group_names", y_var = "norm_arg_abund",
+                                              fixed_effects = c("Gestational_age_weeks"),
+                                              random_effects = c("(1|Patient)", "(1|Site)", "(1|Study)"),
+                                              p.adjust.method = "BH",
+                                              df_method = "kenward-roger")
+write.csv(lmer_emmeans_norm_arg_richness, "260206_lmer_emmeans_richness_norm_ARG_rpkm.csv", row.names = F)
+
+norm_arg_abund <- ggplot(ps.filt.meta2, aes(x = abx_group_names, y = norm_arg_abund, fill = abx_group_names)) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_jitter(shape = 17, aes(fill = abx_group_names), color = "black", width=0.2, size = 2, alpha = 0.4)+
+  scale_fill_manual(values=custom_colors_names)+
+  scale_color_manual(values=custom_colors_names) +
+  facet_wrap(~ DOL_bin, nrow = 2, strip.position = "top") +
+  labs(
+    x = "Antibiotic Exposure Group", 
+    y = "Richness Normalized Total ShortBRED Hits (RPKM)", 
+    fill = "Antibiotic Exposure Group",
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    strip.text = element_text(size = 18, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  )
+ggsave("260206_P4_GM_Dev_Richness_Norm_ARG_rpkm_abx_group_.pdf", plot = norm_arg_abund, bg = "transparent", width = 20, height = 10)
+
+norm_arg_abund_stat <- norm_arg_abund + stat_pvalue_manual(
+  lmer_emmeans_norm_arg_richness,
+  label = "p.adj.signif",   # can use "p.adj" for exact values
+  tip.length = 0.01,
+  step.increase = 0.05,
+  hide.ns = TRUE, bracket.size = 0.6, facet.y = "bin"
+)
+
+```
+
+
+## Beta diversity comparisons
+```{r}
+######## Plot ordination plot #####
+gm_dev_ordination <- phyloseq::ordinate(merged_ps, method='PCoA', distance='bray')
+
+pcoa_gm_dev <- phyloseq::plot_ordination(merged_ps, gm_dev_ordination,
+                                         type="samples", color= "DOL_bin")+
+  geom_point(shape=19, size=3)+
+  #scale_color_manual(values = dol_bin_color_vector) + 
+  scale_color_manual(values=natparks.pals("Arches"))+ 
+  theme_classic()+
+  theme(axis.text.y = element_text(size=20),
+        axis.text.x = element_text(size=20),
+        axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size=16),
+        legend.position = 'left',
+        plot.title = element_text(size=15),
+        panel.border = element_rect(fill=NA, colour="black", size=3))
+
+pcoa_gm_dev <- ggMarginal(pcoa_gm_dev, type='boxplot', groupFill=TRUE, size=10)
+ggsave("260202_GM_Dev_PCoA_DOL_bin_P4_joined.pdf", plot = pcoa_gm_dev, bg = "transparent", width = 9, height = 6)
+
+pcoa_gm_dev_abx <- phyloseq::plot_ordination(merged_ps, gm_dev_ordination,
+                                             type="samples", color= "abx_group_updated")+
+  geom_point(shape=19, size=3)+
+  stat_ellipse()+
+  scale_color_manual(values = custom_colors_abx) + 
+  theme_classic()+
+  theme(axis.text.y = element_text(size=20),
+        axis.text.x = element_text(size=20),
+        axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size=16),
+        legend.position = 'left',
+        plot.title = element_text(size=15),
+        panel.border = element_rect(fill=NA, colour="black", size=3))
+
+pcoa_gm_dev_abx <- ggMarginal(pcoa_gm_dev_abx, type='boxplot', groupFill=TRUE, size=10)
+ggsave("260202_GM_Dev_PCoA_abx_exposure_group_P4_joined.pdf", plot = pcoa_gm_dev_abx, bg = "transparent", width = 9, height = 6)
+
+pcoa_gm_dev_abx_count <- phyloseq::plot_ordination(merged_ps, gm_dev_ordination,
+                                             type="samples", color= "abx_exposure_count")+
+  geom_point(shape=19, size=3)+
+  scale_color_gradientn(colors = natparks.pals("Arches")) + 
+  theme_classic()+
+  theme(axis.text.y = element_text(size=20),
+        axis.text.x = element_text(size=20),
+        axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size=14),
+        legend.position = 'left',
+        plot.title = element_text(size=15),
+        panel.border = element_rect(fill=NA, colour="black", size=3))
+ggsave("260202_GM_Dev_PCoA_abx_exposure_count_P4_joined.pdf", plot = pcoa_gm_dev_abx_count, bg = "transparent", width = 9, height = 6)
+
+
+### Including term infants #####
+gm_dev_ordination2 <- phyloseq::ordinate(ps_infants, method='PCoA', distance='bray')
+
+pcoa_gm_dev_abx_term <- phyloseq::plot_ordination(ps_infants, gm_dev_ordination2,
+                                             type="samples", color= "abx_group_names")+
+  geom_point(shape=19, size=3)+
+  stat_ellipse()+
+  scale_color_manual(values = custom_colors_names) + 
+  theme_classic()+
+  theme(axis.text.y = element_text(size=20),
+        axis.text.x = element_text(size=20),
+        axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size=16),
+        legend.position = 'left',
+        plot.title = element_text(size=15),
+        panel.border = element_rect(fill=NA, colour="black", size=3))
+
+pcoa_gm_dev_abx_term <- ggMarginal(pcoa_gm_dev_abx_term, type='boxplot', groupFill=TRUE, size=10)
+ggsave("260202_GM_Dev_PCoA_abx_exposure_group_tern_joined.pdf", plot = pcoa_gm_dev_abx_term, bg = "transparent", width = 9, height = 6)
+
+
+## Pairwise comparisons by DOL bin ##
+group_levels <- levels(factor(ps_infants_meta$abx_group_names))
+group_pairs <- combn(group_levels, 2, simplify = FALSE)
+
+# Loop through each pair
+for (pair in group_pairs) {
+  # Subset the phyloseq object
+  print(pair)
+  ps_subset <- subset_samples(ps_infants, abx_group_names %in% pair)
+  ps_subset <- prune_samples(sample_sums(ps_subset) > 0, ps_subset)  # avoid empty samples
+  ps_subset
+  
+  # Perform ordination
+  ord <- ordinate(ps_subset, method = "PCoA", distance = "bray")
+  
+  # Base PCoA plot
+  p <- plot_ordination(ps_subset, ord, type = "samples", color = "abx_group_names") +
+    geom_point(shape = 19, size = 3) +
+    stat_ellipse() +
+    scale_color_manual(values = custom_colors_names[pair]) +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 16),
+      legend.title = element_text(size = 14),
+      legend.text = element_text(size = 12),
+      legend.position = "left",
+      plot.title = element_text(size = 16, hjust = 0.5),
+      panel.border = element_rect(fill = NA, colour = "black", size = 1)
+    ) +
+    labs(title = paste(pair[1], "vs", pair[2]))
+  
+  # Add marginal boxplots
+  p_with_marginals <- ggMarginal(p, type = "boxplot", groupFill = TRUE, size = 10)
+  
+  # Save the plot
+  file_name <- paste0("PCoA_", pair[1], "_vs_", pair[2], ".pdf")
+  ggsave(file.path(file_name), plot = p_with_marginals, bg = "transparent", width = 9, height = 6)
+  
+  message("Saved: ", file_name)
+}
+
+
+ps_infants1 <- ps_infants %>% subset_samples(DOL_bin == "DOL 1 - 10")
+plot_pcoa(ps_obj = ps_infants1, group_var = "abx_group_names", custom_colors = custom_colors_names, 
+          adonisformula = "ps.dist ~ Gestational_age_weeks + Site + abx_group_names")
+
+ps_infants2 <- ps_infants %>% subset_samples(DOL_bin == "DOL 11 - 20")
+plot_pcoa(ps_obj = ps_infants2, group_var = "abx_group_names", custom_colors = custom_colors_names,
+          adonisformula = "ps.dist ~ Gestational_age_weeks + Site + abx_group_names")
+
+ps_infants3 <- ps_infants %>% subset_samples(DOL_bin == "DOL 21 - 30")
+plot_pcoa(ps_obj = ps_infants3, group_var = "abx_group_names", custom_colors = custom_colors_names,
+          adonisformula = "ps.dist ~ Gestational_age_weeks + Site + abx_group_names")
+
+ps_infants4 <- ps_infants %>% subset_samples(DOL_bin == "DOL 31 - 40")
+plot_pcoa(ps_obj = ps_infants4, group_var = "abx_group_names", custom_colors = custom_colors_names,
+          adonisformula = "ps.dist ~ Gestational_age_weeks + Site + abx_group_names")
+
+ps_infants5 <- ps_infants %>% subset_samples(DOL_bin == "DOL 41 - 50")
+plot_pcoa(ps_obj = ps_infants5, group_var = "abx_group_names", custom_colors = custom_colors_names,
+          adonisformula = "ps.dist ~ Gestational_age_weeks + Site + abx_group_names")
+
+ps_infants6 <- ps_infants %>% subset_samples(DOL_bin == "DOL 51 - 60")
+plot_pcoa(ps_obj = ps_infants6, group_var = "abx_group_names", custom_colors = custom_colors_names,
+          adonisformula = "ps.dist ~ Gestational_age_weeks + Site + abx_group_names")
+
+
+```
+
+Repeat Measure PERMANOVA Summary Figure
+```{r}
+DOL <- c("DOL")
+baseline_var <- c('Gestational_age_weeks',	'Birthweight','Sex',	'Delivery_route',	'Cohort', 'Necrotizing_enterocolitis', 'Site')
+diet_var <- c('cum_days_formula', 'cum_days_milk', 'frac_days_formula','frac_days_milk')
+mat_var <- c('Maternal_race','Maternal_age_at_delivery',	'Gravida',	'Para',	'Maternal_smoking',	'Maternal_alcohol',	'Maternal_substance_abuse',	'Maternal_preeclampsia',
+'Maternal_diabetes',	'Maternal_chorioamnionitis', 'Maternal_hypertension', 'mat_inpt_antimicrobe',	'mat_outpt_antimicrobial',	'Multiple_births')
+abx_var <- c('abx_group_updated','abx_exposure_count','aminoglycoside_exposure',	'penicillin_exposure',	'macrolide_exposure',	'firstgencephalosporin_exposure',	
+'fourthgencephalosporin_exposure',	'thirdgencephalosporin_exposure',	'secondgencephalosporin_exposure','lincosamide_exposure',		'carbapenem_exposure',
+	'other_antimicrobials_exposure', 'glycopeptide_exposure','acute_abx_exposure_count', 'acute_aminoglycoside_exposure', 'acute_penicillin_exposure','acute_macrolide_exposure', 'acute_firstgencephalosporin_exposure','acute_fourthgencephalosporin_exposure',
+'acute_thirdgencephalosporin_exposure','acute_secondgencephalosporin_exposure','acute_lincosamide_exposure','acute_carbapenem_exposure','acute_other_antimicrobials_exposure',
+'acute_other_non_antimicrobials_exposure','acute_glycopeptide_exposure')
+medications_var <- c('med_exposure_count', 'other_non_antimicrobials_exposure',
+	'morphine_exposure',	'fentanyl_exposure',	'surfactant_exposure',	'acetaminophen_exposure',	'caffeine_exposure',	'cholecalciferol_vit_d__exposure',	'vitamin_a_exposure',	
+  'famotidine_pepcid__exposure',	'iron_exposure',	'calcium_gluconate_exposure',	'dopamine_exposure',	'adenosine_exposure',	'cosyntropin_cortrosyn_acth__exposure',	
+  'bumetanide_bumax__exposure',	'indomethacin_exposure',	'multi_vitamin_with_iron_exposure',	'lasix_exposure',	'atropine_exposure',	'dobutamine_exposure',	'sodium_chloride_exposure',	
+  'levothyroxine_exposure',	'dexamethasone_exposure',	'phenobarbitol_exposure',	'hydrocortisone_exposure',	'ibuprofen_exposure',	'chlorathiazide_diuril__exposure',	'midazolam_versed__exposure',	
+  'potassium_chloride_exposure',	'hepatitis_b_immune_globulin_exposure',	'citric_acid_sodium_citrate_bicitra__exposure',	'pancuronium_or_vecurionium_exposure',	'insulin_exposure',	
+  'immunoglobulin_other_exposure',	'multi_vitamin_no_iron_exposure',	'levocarnitine_exposure',	'digoxin_exposure',	'hydraluronidase_hydase__exposure',	'lorazapam_ativan__exposure',	
+  'sodium_bicarbonate_exposure',	'hydrochlorathiazide_hydrodiuril__exposure',	'spironolactone_hydrochlorathiazide_aldactazide__exposure',	'tocopherol_acetate_vit_e__exposure', 'antifungal_exposure', 'acute_med_exposure_count','acute_morphine_exposure','acute_fentanyl_exposure','acute_surfactant_exposure',
+'acute_acetaminophen_exposure','acute_caffeine_exposure','acute_cholecalciferol_vit_d__exposure',
+'acute_vitamin_a_exposure','acute_famotidine_pepcid__exposure','acute_iron_exposure',
+'acute_calcium_gluconate_exposure','acute_dopamine_exposure','acute_bumetanide_bumax__exposure',
+'acute_other_exposure','acute_indomethacin_exposure','acute_multi_vitamin_with_iron_exposure',
+'acute_lasix_exposure','acute_atropine_exposure','acute_dobutamine_exposure',
+'acute_sodium_chloride_exposure','acute_levothyroxine_exposure','acute_dexamethasone_exposure',
+'acute_phenobarbitol_exposure','acute_hydrocortisone_exposure','acute_ibuprofen_exposure',
+'acute_chlorathiazide_diuril__exposure','acute_midazolam_versed__exposure',
+'acute_potassium_chloride_exposure','acute_citric_acid_sodium_citrate_bicitra__exposure',
+'acute_pancuronium_or_vecurionium_exposure','acute_insulin_exposure', "acute_multi_vitamin_no_iron_exposure", "acute_levocarnitine_exposure", "acute_digoxin_exposure", "acute_lorazapam_ativan__exposure", "acute_sodium_bicarbonate_exposure",
+'acute_antifungal_exposure', 'acute_antiviral_exposure', 'antiviral_exposure')
+
+results <- read_excel("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/Re-grouped/Beta_diversity/260203_GM_Dev_repeat_permanova_results_combined.xlsx")
+results$p_adj_BH_redo <- p.adjust(results[["Pr(>F)"]], method = "BH")
+results$p_adj_BH_redo <- as.numeric(results$p_adj_BH_redo)
+write.csv(results, "260209_Repeat_measures_PERMANOVA_results_p_adj_redo.csv", row.names = F)
+
+results <- results %>%
+  mutate(significant = p_adj_BH_redo < 0.05,
+         Category = case_when(Variable %in% DOL ~ "DOL",
+                              Variable %in% baseline_var ~ "Baseline",
+                              Variable %in% diet_var ~ "Diet",
+                              Variable %in% mat_var ~ "Maternal",
+                              Variable %in% abx_var ~ "Antibiotic",
+                              Variable %in% medications_var ~ "Non-antibiotic medication"))
+var_order <- c("DOL","Baseline", "Diet", "Maternal","Antibiotic", "Non-antibiotic medication")
+
+results$Category <- factor(results$Category, levels = var_order)
+
+results_plot <- results %>% mutate(R2_percent = R2 * 100,
+                                   sig_label = case_when(p_adj_BH_redo <= 0.001 ~ "***",
+                                                         p_adj_BH_redo <= 0.01 ~ "**",
+                                                         p_adj_BH_redo <= 0.05 ~ "*")) %>%
+  filter(p_adj_BH_redo < 0.05) %>%
+  arrange(desc(R2_percent)) %>%
+  mutate(Label = factor(Label, levels = unique(Label))) %>%
+  ungroup()
+
+perm_cat_vector = c("DOL" = "#3A1F46","Baseline" = "#7F4B89", "Diet" = "#F3DAE4", "Antibiotic" = "#E3A5D6", "Non-antibiotic medication" = "#7C5467")
+
+permanova_sign_var_p <- ggplot(results_plot, aes(x = Label, y = R2_percent, fill = Category)) +
+  geom_col(width = 0.8, color = "black") + 
+  geom_text(aes(label = sig_label, y = R2_percent + 0.15), size = 5, vjust = 0) +
+  scale_fill_manual(values=perm_cat_vector) + 
+  labs(x = NULL, y = "Variance explained (%)", fill = NULL) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) + 
+  theme_classic(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right",
+    axis.line.x = element_line(color = "black", linewidth = 0.6),
+    axis.ticks.x = element_line(color = "black", linewidth = 0.4),
+    plot.margin = ggplot2::margin(t = 10, r = 10, b = 40, l = 10))  # extra space for category bar
+ggsave("260205_GM_Dev_repeat_measure_PERMANOVA_sign_var_acute_combined.pdf", plot = permanova_sign_var_p, bg = "transparent", width = 12, height = 6)
+```
+
+
+Run Linear Mixed Models (MaAslin2) to test association between species and metadata
+```{r}
+############### ----------------------------- Taxa ----------------------##################################################
+
+repeat_permanova_sign_var <- results_plot$Variable
+
+pterm_infants_otu <- data.frame(otu_table(merged_ps), check.names = FALSE) 
+pterm_infants_meta <- data.frame(sample_data(merged_ps), check.names = FALSE)
+
+pterm_infants_meta <- pterm_infants_meta %>% mutate(Study = case_when(Cohort == "BSI" ~ "Schwartz_et_al",
+                                                                  Cohort == "Gasparrini_preterm" ~ "Gasparrini_et_al",
+                                                                  Cohort == "Gasparrini_term" ~ "Gasparrini_et_al",
+                                                                  Cohort == "Molly" ~ "Gibson_et_al",
+                                                                  Cohort == "NEC_control" ~ "Thanert_et_al",
+                                                                  Cohort == "No_abx_preterm" ~ "This_study",
+                                                                  Cohort == "P4_cross_sectional" ~ "This_study"))
+
+cat_var <- c("Patient",'Sex','Delivery_route', 'Necrotizing_enterocolitis', 'Site','Maternal_substance_abuse','Maternal_preeclampsia','Maternal_diabetes', 'Maternal_chorioamnionitis', 'Maternal_hypertension','mat_inpt_antimicrobe', 'mat_outpt_antimicrobial','Multiple_births','Cohort', 'Site', 'abx_group_updated',
+             'abx_group_names', 'Study')
+
+num_var <- c('Gestational_age_weeks', 'Birthweight','DOL','abx_exposure_count', 'antiviral_exposure', 'antiviral_exposure',	'aminoglycoside_exposure',	
+'penicillin_exposure',	'macrolide_exposure',	'firstgencephalosporin_exposure',	'fourthgencephalosporin_exposure',	'thirdgencephalosporin_exposure',	'secondgencephalosporin_exposure',	
+'lincosamide_exposure',	'antifungal_exposure',	'carbapenem_exposure',	'other_antimicrobials_exposure',	'other_non_antimicrobials_exposure','glycopeptide_exposure', 'med_exposure_count',
+	'morphine_exposure',	'fentanyl_exposure',	'surfactant_exposure',	'acetaminophen_exposure',	'caffeine_exposure',	'cholecalciferol_vit_d__exposure',	'vitamin_a_exposure',	
+  'famotidine_pepcid__exposure',	'iron_exposure',	'calcium_gluconate_exposure',	'dopamine_exposure',	'adenosine_exposure',	'cosyntropin_cortrosyn_acth__exposure',	
+  'bumetanide_bumax__exposure',	'indomethacin_exposure',	'multi_vitamin_with_iron_exposure',	'lasix_exposure',	'atropine_exposure',	'dobutamine_exposure',	'sodium_chloride_exposure',	
+  'levothyroxine_exposure',	'dexamethasone_exposure',	'phenobarbitol_exposure',	'hydrocortisone_exposure',	'ibuprofen_exposure',	'chlorathiazide_diuril__exposure',	'midazolam_versed__exposure',	
+  'potassium_chloride_exposure',	'hepatitis_b_immune_globulin_exposure',	'citric_acid_sodium_citrate_bicitra__exposure',	'pancuronium_or_vecurionium_exposure',	'insulin_exposure',	
+  'immunoglobulin_other_exposure',	'multi_vitamin_no_iron_exposure',	'levocarnitine_exposure',	'digoxin_exposure',	'hydraluronidase_hydase__exposure',	'lorazapam_ativan__exposure',	
+  'sodium_bicarbonate_exposure',	'hydrochlorathiazide_hydrodiuril__exposure',	'spironolactone_hydrochlorathiazide_aldactazide__exposure',	'tocopherol_acetate_vit_e__exposure', 
+  'cum_days_formula', 'cum_days_milk', 'frac_days_formula','frac_days_milk', "acute_fentanyl_exposure", "acute_cholecalciferol_vit_d__exposure", "acute_dopamine_exposure", "acute_levothyroxine_exposure", "acute_hydrocortisone_exposure", "acute_insulin_exposure", "acute_surfactant_exposure", "acute_iron_exposure", "acute_indomethacin_exposure", "acute_dexamethasone_exposure",
+"acute_citric_acid_sodium_citrate_bicitra__exposure", "acute_lorazapam_ativan__exposure", )
+
+pterm_infants_meta <- pterm_infants_meta %>%
+  mutate(across(all_of(intersect(cat_var, names(.))), as.factor)) %>%
+  mutate(across(all_of(intersect(results_plot$Variable, names(.))), as.numeric))
+
+pterm_infants_meta$abx_group_updated <- factor(pterm_infants_meta$abx_group_updated, levels = c("None", "Early only", "Early and after"))
+
+maaslin_taxa_results <- Maaslin2(input_data = pterm_infants_otu,
+                                input_metadata = pterm_infants_meta,
+                                transform = "LOG",
+                                normalization = "NONE",
+                                min_abundance = 0.0001,
+                                min_prevalence = 0.1,
+                                output = "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/Re-grouped/MaAslin2/Taxa/all_sign_var",
+                                fixed_effects = c("abx_group_updated",repeat_permanova_sign_var),
+                                random_effects = c("Patient", "Site", "Study"))
+
+############ --------------- Coefficient Plots ------------------------------#############################################
+taxa_sign_out <- read_excel("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/Re-grouped/MaAslin2/Taxa/all_sign_var/significant_results.xlsx")
+
+num_samples <- 2406
+
+taxa_sign_out_filt <- taxa_sign_out %>%
+  filter(qval < 0.05) %>%
+  mutate(
+    # grab text AFTER "g__" up to the next dot
+    genus  = str_extract(feature, "(?<=g__)[^.]+"),
+    genus  = if_else(is.na(genus) | genus == "", "Unknown", genus),
+    value  = as.factor(value),
+    feature = gsub(".*s__", "", feature)
+  )
+write.csv(taxa_sign_out_filt, "260205_MaAslin2_all_sign_var_results.csv", row.names = F)
+
+unique_taxa <- unique(taxa_sign_out_filt$feature)
+unique_genera <- unique(taxa_sign_out_filt$genus)
+
+maaslin_taxa_abxGroup <- taxa_sign_out %>% filter(metadata == "abx_group_updated") %>% 
+  #filter(qval < 0.05) %>%
+  mutate(
+    # grab text AFTER "g__" up to the next dot
+    genus  = str_extract(feature, "(?<=g__)[^.]+"),
+    genus  = if_else(is.na(genus) | genus == "", "Unknown", genus),
+    value  = as.factor(value),
+    feature = gsub(".*s__", "", feature)
+  ) %>%
+  arrange(desc(coef))
+
+#obtain min and max coefficient values (needed for plotting later)
+min <- min(maaslin_taxa_abxGroup$coef)
+max <- max(maaslin_taxa_abxGroup$coef)
+
+### Generate coefficient plot ####
+# Calculate 95% CI for coefficients
+maaslin_taxa_abxGroup <- maaslin_taxa_abxGroup %>% mutate(species = fct_reorder(feature, coef))
+
+maaslin_taxa_abxGroup$coefmax <- maaslin_taxa_abxGroup$coef + maaslin_taxa_abxGroup$stderr
+maaslin_taxa_abxGroup$coefmin <- maaslin_taxa_abxGroup$coef - maaslin_taxa_abxGroup$stderr
+
+maaslin_taxa_abxGroup$CI95upper <- maaslin_taxa_abxGroup$coef + 1.96*maaslin_taxa_abxGroup$stderr
+maaslin_taxa_abxGroup$CI95lower <- maaslin_taxa_abxGroup$coef - 1.96*maaslin_taxa_abxGroup$stderr
+
+maaslin_taxa_abxGroup$value <- factor(maaslin_taxa_abxGroup$value, levels = c("Early only", "Early and after"))
+write.csv(maaslin_taxa_abxGroup, "260205_MaAslin2_sign_taxa_abx_group.csv", row.names = F)
+
+# Plot coefficients
+x_min_lim <- (floor(min / 5) * 6) 
+x_max_lim <- (ceiling(max / 5) * 6) 
+colors_list <- c("#44637D","#AAC9ED")
+
+abxgroup_coeff_p <- ggplot(maaslin_taxa_abxGroup, aes(x=coef, y=species,color=value))+
+  geom_point(size = 3)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower, height =0.1))+
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.5)+
+  scale_color_manual(values=colors_list)+
+  theme_linedraw()+
+  theme(axis.text.y = element_text(size=18),
+        axis.text.x = element_text(size=17),
+        axis.title.x = element_text(size=17),
+        axis.title.y = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = "bottom",
+        plot.title = element_text(size=15),
+        panel.border = element_rect(fill=NA, colour="black", size=1))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  xlab('Coefficient') + ggtitle("Antibiotic Exposure Group")
+ggsave("260205_GM_dev_abx_group_MaAslin2_taxa_coeff.pdf", plot = abxgroup_coeff_p, bg = "transparent", width = 11, height = 12)
+
+#### Generate prevalence plot ###
+### Access species abundance data 
+abund_gmdev <- psmelt(merged_ps)
+
+abund_gmdev <- abund_gmdev %>%  mutate(
+    genus = str_extract(OTU, "g__[^|]+"),  # extract 'g__Genus'
+    genus = str_remove(genus, "g__"),          # remove 'g__' prefix
+    genus = if_else(is.na(genus), "Unknown", genus),
+    OTU=gsub(".*s__", "", OTU))
+
+abund_abx_group <- subset(abund_gmdev, OTU %in% maaslin_taxa_abxGroup$feature)
+
+# Re-order feature abs abundances according to coefficient value
+# This order is preserved in filename, which was previously ordered: 
+order_abx_group <- data.frame(OTU = unique(maaslin_taxa_abxGroup$feature))
+# sort = F makes sure that the order is based on order_index df which is ordered by coefficient value
+abund_abx_group.df <- merge(order_abx_group, abund_abx_group, by="OTU", sort = F)
+abund_abx_group.df$OTU <- as.factor(abund_abx_group.df$OTU)
+abund_abx_group.df <- abund_abx_group.df %>% mutate(OTU = fct_relevel(OTU, order_abx_group$OTU))
+
+# For each significant feature in each sample, set AbunNotZero == 1 if its 
+# abundance is greater than 0. 
+abund_abx_group.df$AbunNotZero <- 1*(abund_abx_group.df$Abundance > 0)
+
+# Summarize pathway prevalence by variable of interest
+abund_abx_group.df.n0 <- abund_abx_group.df %>% 
+  group_by(OTU, abx_group) %>%
+  dplyr::summarise(N = n(), SumNotZero = sum(AbunNotZero)) %>%
+  mutate(PercentNotZero = 100*(SumNotZero / N)) %>%
+  ungroup()
+write.csv(abund_abx_group.df.n0, "260205_GM_dev_abx_group_maaslin2_species_prevalence.csv", 
+          row.names = F)
+
+prev_p_abx_group <- ggplot(abund_abx_group.df.n0, aes(x = abx_group, y=OTU, fill=PercentNotZero))+
+  geom_tile()+
+  scale_fill_distiller(palette ='RdBu', type='seq', breaks = c(0,50,100), 'Prevalence (%)')+
+  theme_classic()+
+  theme(axis.text.y = element_blank(),
+        axis.text.x = element_text(size=17, angle=45, hjust=1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size=17),
+        legend.text = element_text(size = 18),
+        panel.border = element_rect(fill=NA, colour="black", size=1))+
+  scale_y_discrete(limits=rev)
+ggsave("260205_GM_dev_abx_group_MaAslin2_taxa_prev.pdf", plot = prev_p_abx_group, bg = "transparent", width = 11, height = 12)
+
+combined_abx_group <- abxgroup_coeff_p | prev_p_abx_group 
+ggsave("260205_GM_dev_MaAslin2_taxa_plot.pdf", plot = combined_abx_group, bg = "transparent", width = 12, height = 6)
+
+############---------------- Other numerical variables ------------------------------------------#########
+library(tidytext)
+library(plyr)
+library(stringr)
+
+perm_cat_vector = c("DOL" = "#3A1F46", "Baseline" = "#7F4B89", "Diet" = "#F3DAE4", "Antibiotic" = "#E3A5D6", "Non-antibiotic medication" = "#7C5467")
+
+taxa_sign_out_num <- taxa_sign_out_filt %>% filter(metadata != "abx_group_updated") %>% 
+  mutate(direction = if_else(coef > 0, "Positive", "Negative"),
+         feature = reorder_within(feature, coef, metadata)) 
+write.csv(taxa_sign_out_num, "260205_sign_MaAslin2_taxa.csv", row.names = F)
+
+taxa_sign_out_num <- read_excel("260205_sign_MaAslin2_taxa.xlsx")
+taxa_sign_out_num <- taxa_sign_out_num %>% mutate(direction = if_else(coef > 0, "Positive", "Negative"),
+         feature = reorder_within(feature, coef, metadata)) 
+
+
+taxa_sign_out_num$metadata_category <- factor(taxa_sign_out_num$metadata_category, levels = names(perm_cat_vector))
+
+#obtain min and max coefficient values (needed for plotting later)
+min <- min(taxa_sign_out_num$coef)
+max <- max(taxa_sign_out_num$coef)
+
+### Generate coefficient plot ####
+# Calculate 95% CI for coefficients
+#maaslin_taxa <- taxa_sign_out_num %>% mutate(species = fct_reorder(feature, coef))
+
+taxa_sign_out_num$coefmax <- taxa_sign_out_num$coef + taxa_sign_out_num$stderr
+taxa_sign_out_num$coefmin <- taxa_sign_out_num$coef - taxa_sign_out_num$stderr
+
+taxa_sign_out_num$CI95upper <- taxa_sign_out_num$coef + 1.96*taxa_sign_out_num$stderr
+taxa_sign_out_num$CI95lower <- taxa_sign_out_num$coef - 1.96*taxa_sign_out_num$stderr
+
+taxa_sign_out_num$direction <- factor(taxa_sign_out_num$direction, levels = c("Positive", "Negative"))
+
+library(ggh4x)
+
+genus_color_vector <- c(
+  "Veillonella"      = "#A8A55C",  # blue
+  "Streptococcus"      = "#68434E",  # green
+  "Clostridium"    = "#B07159",  # red
+  "Klebsiella"     = "#2F4B7A",  # orange
+  "Enterobacter"      = "#8C2B0E",  
+  "Staphylococcus"      = "#B47E83",  # brown
+  "Enterococcus"  = "#F2A450",  # light blue
+  "Escherichia"    = "#9F7E59",  # pink
+  "Cutibacterium"          = "#6EA57B",  # lavender
+  "Finegoldia"       = "#8DA0CB",  # light yellow
+  "Clostridioides"          = "#088096"  
+)
+
+custom_genus_colors <- c(
+
+  # --- Bacteroidota: blue-greens ---
+  "g__Bacteroides"      = "#088096",
+  "g__Parabacteroides"  = "#7AD4E4",
+
+  # --- Actinobacteriota: warm teals ---
+  "g__Bifidobacterium"  = "#9AC8A4",
+  "g__Cutibacterium"    = "#6EA57B",
+
+  # --- Firmicutes Clostridia: orange-browns ---
+  "g__Clostridium"        = "#B07159",
+  "g__Erysipelatoclostridium" = "#6C3322",
+
+  # --- Firmicutes Bacilli: pink-reds ---
+  "g__Enterococcus"     = "#F2A450",
+  "g__Staphylococcus"   = "#B47E83",
+  "g__Streptococcus"    = "#68434E",
+
+  # --- Proteobacteria: blue-purple tones ---
+  "g__Citrobacter"      = "#DFCB91",
+  "g__Enterobacter"     = "#8C2B0E",
+  "g__Escherichia"      = "#9F7E59",
+  "g__Klebsiella"       = "#2F4B7A",
+  "g__Serratia"         = "#7C97C2",
+
+  # --- Negativicutes (Veillonellaceae): olive-greens ---
+  "g__Veillonella"      = "#A8A55C",
+    # --- Other: neutral gray ---
+  "Other"               = "#A9A9A9"   # darkgray
+)
+
+custom_colors_top6 <- c("g__Escherichia" = "#9F7E59","g__Enterobacter" = "#8C2B0E", "g__Klebsiella" = "#2F4B7A", "g__Staphylococcus" = "#B47E83","g__Finegoldia" = "#8DA0CB","g__Enterococcus" = "#F2A450")
+
+taxa_dol_coeff <- taxa_sign_out_num %>% filter(metadata_category == "DOL") %>% ggplot(., aes(x = coef , y = feature)) +
+  geom_point(aes(color = genus), alpha = 0.9, size = 3) +
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.2)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower, height =0.1))+
+  facet_wrap2(~ Label, labeller = as_labeller(function(x) {str_wrap(x, width = 20)}), scales = "free_y", ncol = 4) +
+  scale_color_manual(values = genus_color_vector, name = "Genus") +
+  scale_size_continuous(range = c(2, 10)) +
+  scale_y_reordered() +
+  theme_linedraw(base_size = 13)+
+  labs(
+    x = "Model Coefficient",
+    y = NULL,
+    color = "Direction") +
+  theme(
+    strip.text = element_text(size = 11, face = "bold"),
+    strip.background = element_rect(fill = "#3A1F46", color = "white"),
+    axis.text.y = element_text(size = 11),
+    axis.title.x = element_text(size = 11, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none")
+ggsave("260205_GM_dev_MaAslin2_taxa_DOL_var_coeff_plot.pdf", plot = taxa_dol_coeff, bg = "transparent", width = 5, height = 4)
+
+taxa_baseline_coeff <- taxa_sign_out_num %>% filter(metadata_category == "Baseline") %>% ggplot(., aes(x = coef , y = feature)) +
+  geom_point(aes(color = genus), alpha = 0.9, size = 3) +
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.2)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower, height =0.1))+
+  facet_wrap2(~ Label, labeller = as_labeller(function(x) {str_wrap(x, width = 20)}), scales = "free_y", ncol = 4) +
+  scale_color_manual(values = genus_color_vector, name = "Genus") +
+  scale_size_continuous(range = c(2, 10)) +
+  scale_y_reordered() +
+  theme_linedraw(base_size = 13)+
+  labs(
+    x = "Model Coefficient",
+    y = NULL,
+    color = "Direction") +
+  theme(
+    strip.text = element_text(size = 11, face = "bold"),
+    strip.background = element_rect(fill = "#7F4B89", color = "white"),
+    axis.text.y = element_text(size = 11),
+    axis.title.x = element_text(size = 11, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none")
+ggsave("260205_GM_dev_MaAslin2_taxa_baseline_var_coeff_plot.pdf", plot = taxa_baseline_coeff, bg = "transparent", width = 4, height = 3)
+
+taxa_diet_coeff <- taxa_sign_out_num %>% filter(metadata_category == "Diet") %>% ggplot(., aes(x = coef , y = feature)) +
+  geom_point(aes(color = genus), alpha = 0.9, size = 3) +
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.2)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower, height =0.1))+
+  facet_wrap2(~ Label, labeller = as_labeller(function(x) {str_wrap(x, width = 20)}), scales = "free_y", ncol = 4) +
+  scale_color_manual(values = genus_color_vector, name = "Genus") +
+  scale_size_continuous(range = c(2, 10)) +
+  scale_y_reordered() +
+  theme_linedraw(base_size = 13)+
+  labs(
+    x = "Model Coefficient",
+    y = NULL,
+    color = "Direction") +
+  theme(
+    strip.background = element_rect(fill = "#F3DAE4", color = "black"),
+    strip.text = element_text(size = 11, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 11),
+    axis.title.x = element_text(size = 11, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    legend.box = "horizontal")
+ggsave("260205_GM_dev_MaAslin2_taxa_diet_var_coeff_plot.pdf", plot = taxa_diet_coeff, bg = "transparent", width = 9, height = 4)
+
+taxa_abx_coeff <- taxa_sign_out_num %>% filter(metadata_category == "Antibiotic") %>% ggplot(., aes(x = coef , y = feature)) +
+  geom_point(aes(color = genus), alpha = 0.9, size = 3) +
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.2)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower, height =0.1))+
+  facet_wrap2(~ Label, labeller = as_labeller(function(x) {str_wrap(x, width = 20)}), scales = "free_y", ncol = 4) +
+  scale_color_manual(values = genus_color_vector, name = "Genus") +
+  scale_size_continuous(range = c(2, 10)) +
+  scale_y_reordered() +
+  theme_linedraw(base_size = 13)+
+  labs(
+    x = "Model Coefficient",
+    y = NULL,
+    color = "Direction") +
+  theme(
+    strip.background = element_rect(fill = "#E3A5D6", color = "black"),
+    strip.text = element_text(size = 12, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 11, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 10),
+    legend.box = "horizontal")
+ggsave("260205_GM_dev_MaAslin2_taxa_abx_var_coeff_plot.pdf", plot = taxa_abx_coeff, bg = "transparent", width = 18, height = 6)
+
+taxa_med_coeff <- taxa_sign_out_num %>% filter(metadata_category == "Non-antibiotic medication") %>% ggplot(., aes(x = coef , y = feature)) +
+  geom_point(aes(color = genus), alpha = 0.9, size = 3) +
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.2)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower, height =0.1))+
+  facet_wrap2(~ Label, labeller = as_labeller(function(x) {str_wrap(x, width = 20)}), scales = "free_y", ncol = 4) +
+  scale_color_manual(values = genus_color_vector, name = "Genus") +
+  scale_size_continuous(range = c(2, 10)) +
+  scale_y_reordered() +
+  theme_linedraw(base_size = 13)+
+  labs(
+    x = "Model Coefficient",
+    y = NULL,
+    color = "Direction") +
+  theme(
+    strip.background = element_rect(fill = "#7C5467", color = "black"),
+    strip.text = element_text(size = 9, face = "bold", color = "white"),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none")
+ggsave("260205_GM_dev_MaAslin2_taxa_med_var_coeff_plot.pdf", plot = taxa_med_coeff, bg = "transparent", width = 22, height = 8)
+
+###################### ---------------------------- ShortBRED-------------------###########################################
+## Merge term infant ARGs with class
+arg.map <- read.delim('~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/ShortBRED_mapping.txt',header = F)
+
+## Merge preterm infant ARGs with class
+arg.byclass <- merge(arg_df, arg.map, by.x = 'Family', by.y = 'V1') %>% 
+  dplyr::rename(Class = V2)
+
+arg.byclass_preterm <- arg.byclass %>% 
+  dplyr::group_by(Sample_ID_R_final, Class) %>% 
+  dplyr::summarise(Count = sum(Count))
+
+arg.byclass_preterm.wide <- dcast(arg.byclass_preterm, Sample_ID_R_final ~ Class, value.var = 'Count')
+arg.byclass_preterm.wide[is.na(arg.byclass_preterm.wide)] <- 0
+row.names(arg.byclass_preterm.wide) <- arg.byclass_preterm.wide$Sample_ID_R_final
+arg.byclass_preterm.wide$Sample_ID_R_final <- NULL
+
+
+# Create metadata file
+merged_ps_meta <- data.frame(sample_data(merged_ps))
+
+merged_ps_meta_filt <- merged_ps_meta %>% select(Sample_ID_R_final, Patient, Cohort, Site, DOL, DOL_bin, Gestational_age_weeks, Birthweight, Sex, Delivery_route, abx_exposure_count, abx_group_updated, abx_group_names)
+
+merged_ps_meta_filt$abx_group_updated <- factor(merged_ps_meta_filt$abx_group_updated, levels = c("None", "Early only", "Early and after"))
+
+############--------- Run MaAslin2 -------------------------------############################
+
+shortbred_preterm <- Maaslin2(input_data = arg.byclass_preterm.wide,
+                                input_metadata = merged_ps_meta_filt,
+                                transform = "LOG",
+                                normalization = "NONE",
+                                min_abundance = 0.0001,
+                                min_prevalence = 0.1,
+                                output = "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/Re-grouped/MaAslin2/ShortBRED/Preterm_site_cohort_random_effect_v2",
+                                fixed_effects = c("Gestational_age_weeks","abx_group_updated, None"),
+                                random_effects = c("Patient", "Site", "Cohort"))
+
+
+```
+
+
+Determine the hospitalized site proportion in the abx-exposed infants
+```{r}
+abx_infants <- merged_ps_meta %>% filter(abx_group_updated != "None")
+table(abx_infants$Site)
+
+## Get proportions per site
+hosp_site_prop <- abx_infants %>% count(Site) %>% mutate(proportion = n / sum(n))
+```
+
+Random Forest Analysis to predict microbiota age
+```{r}
+library(randomForest)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(caret)
+
+load("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/260109_Preterm_GA_matched_PS_object.RData")
+load("my_environment.RData")
+# 1. Apply random forests regression to regress relative abundances of all species predicted by MetaPhlAn3 in infant stool samples against their chronological age 
+## Default parameters used: ntree = 10,000, importance = TRUE
+# 2. Fivefold cross-validation was performed using 'rfcv' function over 100 iterations to estimate the min number of features (taxa) needed to accurately predict microbiota age. This was done using 100 iterations of the "importance" function 
+### Importance determined based on the percentage increase in mean-squared error of microbiota age prediction when the relative abundance values of each taxon were randomly permuted 
+# 3. Sparse model consisting of the 50 most important features constructed and trained on half of abx-naive near-term infants that were randomly selected 
+# 4. Validate model in remaining half of abx-naive near-term infants 
+# 5. Apply model to each preterm infant group 
+
+# Renormalize ps object to ensure that relative abundance sums to 100
+ps_filt_dol60_renorm  <- transform_sample_counts(merged_ps, function(x) (x / sum(x))*100 )
+
+# # Access taxa relative abundances, and sample metadata
+# mtg_relabund.df <- data.frame(otu_table(ps_m3_mtg_long_renorm), check.names = FALSE)
+
+# Load your taxa relative abundance dataframe and chronological age vector
+relabund_meta_full.df <- psmelt(ps_filt_dol60_renorm) 
+# Rename each OTU so that the name only has species names not the full phylogenetic breakdown 
+relabund_meta.df <- relabund_meta_full.df %>%
+    mutate(OTU = sapply(str_split(OTU, "\\|"), function(x) if(length(x) >= 7) x[7] else NA))
+
+# Subset to only rows from ABN samples  
+relabund_meta_naive.df <- relabund_meta.df %>%
+  filter(abx_group_updated == "None")
+
+# randomForest requires that each row represent a sample and columns represent relative abundance of taxa
+## we will also need a column for the response variable, age
+# This means we will need to reformat the output of psmelt() which outputs a long-format dataframe where:
+## each row is a specific taxon in a sample and columns include sample ID and metadata like age 
+
+# First pivot dataframe to wide format and 
+taxa_abundance <- relabund_meta_naive.df %>%
+  select(Sample, OTU, Abundance) %>%
+  pivot_wider(names_from = OTU, values_from = Abundance, values_fill = 0) # values_fill = 0 makes sure that missing values (e.g., taxa absent in a sample) are set to 0
+
+# Add age as a separate column
+taxa_abundance <- taxa_abundance %>%
+  left_join(
+    relabund_meta_naive.df %>% select(Sample, DOL, Site) %>% distinct(),
+    by = "Sample"
+  )
+
+# 2. Randomly split the data upfront into training and validation sets
+set.seed(142)  # For reproducibility
+train_indices <- sample(1:nrow(taxa_abundance), size = 0.6 * nrow(taxa_abundance))
+train_data <- taxa_abundance[train_indices, ]
+validation_data <- taxa_abundance[-train_indices, ]
+
+# Separate predictors and response for training set
+x_train <- train_data %>% select(-Sample, -DOL)
+y_train <- train_data$DOL
+
+# Step 2: Perform 100 iterations for feature importance and RFCV
+iterations <- 100
+importance_list <- vector("list", iterations)
+rfcv_results_list <- vector("list", iterations)
+
+for (i in 1:iterations) {
+  cat("Iteration:", i, "\n")
+  
+  # Fit Random Forest model on the training set
+  rf_model <- randomForest(
+    x = x_train,
+    y = y_train,
+    ntree = 10000,
+    importance = TRUE
+  )
+  
+  # Extract feature importance
+  importance_df <- as.data.frame(importance(rf_model))
+  importance_df <- importance_df %>%
+    mutate(Taxon = rownames(importance_df),
+           Iteration = i) %>%
+    arrange(desc(IncNodePurity))
+  
+  # Append this iteration's importance data to the list
+  importance_list[[i]] <- importance_df
+  
+  # Perform RFCV for this iteration
+  rfcv_results <- rfcv(
+    trainx = x_train,
+    trainy = y_train,
+    cv.fold = 10,
+    step = 0.5
+  )
+  
+  # Store the rfcv results with the iteration number
+  rfcv_results_list[[i]] <- data.frame(
+    Iteration = i,
+    n_features = rfcv_results$n.var,
+    error = rfcv_results$error.cv
+  )
+}
+
+# Combine all feature importance results
+feature_importance_df <- bind_rows(importance_list)
+
+# Aggregate feature importance (Mean and SD for both %IncMSE and IncNodePurity)
+aggregated_importance <- feature_importance_df %>%
+  group_by(Taxon) %>%
+  summarise(
+    MeanIncNodePurity = mean(IncNodePurity, na.rm = TRUE),
+    SDIncNodePurity = sd(IncNodePurity, na.rm = TRUE),
+    MeanPercIncMSE = mean(`%IncMSE`, na.rm = TRUE),
+    SDPercIncMSE = sd(`%IncMSE`, na.rm = TRUE)
+  ) %>%
+  arrange(desc(MeanPercIncMSE))
+
+
+# Combine all rfcv results
+rfcv_results_df <- bind_rows(rfcv_results_list)
+
+# Summarize rfcv results across iterations
+aggregated_rfcv <- rfcv_results_df %>%
+  group_by(n_features) %>%
+  summarise(
+    MeanError = mean(error, na.rm = TRUE),
+    SDError = sd(error, na.rm = TRUE)
+  )
+
+# Plot aggregated RFCV results
+rfcv_error_variables_plot <- ggplot(aggregated_rfcv, aes(x = n_features, y = MeanError)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = MeanError - SDError, ymax = MeanError + SDError), width = 5) +
+  theme_minimal() +
+  labs(
+    x = "Number of Variables",
+    y = "Cross-validation error",
+    title = "RFCV Error Across Variable Subsets"
+  )
+ggsave("260202_GMdev_RF_RFCV_aggregated_results_plot.pdf", plot = rfcv_error_variables_plot, bg = "transparent", width = 6, height = 6)
+
+# Based on rfcv results, minimal improvement in predictive performance was observed when including taxa beyond the top N
+top_taxa_n <- 50
+top_taxa_rf <- aggregated_importance %>%
+  arrange(desc(MeanPercIncMSE)) %>%
+  dplyr::slice(1:top_taxa_n) %>%
+  pull(Taxon)  # Select top N taxa based on mean importance
+
+top50 <- aggregated_importance %>% arrange(desc(MeanPercIncMSE)) %>% slice_head(n=50)
+
+## Plot the top 50 taxa by %IncMSE
+top50_taxa_plot <- ggplot(top50, aes(x = reorder(Taxon, MeanPercIncMSE), y = MeanPercIncMSE)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = MeanPercIncMSE - SDPercIncMSE, ymax = MeanPercIncMSE + SDPercIncMSE), width = 0.3) +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Increase in Mean Squared Error (%)",
+    title = "Top 50 Age-Discriminatory Taxa"
+  ) +
+  theme_minimal()
+ggsave("260202_GMdev_RF_top50_taxa_by_MSE_plot.pdf", plot = top50_taxa_plot, bg = "transparent", width = 6, height = 8)
+
+# Step 3: Train sparse model on training set and validate on validation set
+x_train_sparse <- x_train[, top_taxa_rf, drop = FALSE]
+
+sparse_rf_model <- randomForest(
+  x = x_train_sparse,
+  y = y_train,
+  ntree = 10000,
+  importance = TRUE
+)
+
+
+#############-------------Apply sparse model to Early only and Early and After infants--------------#################
+ps_early_only <- ps_filt_dol60_renorm %>% subset_samples(abx_group_updated == "Early only") # 801 samples; 171 infants
+ps_early_and_after <- ps_filt_dol60_renorm %>% subset_samples(abx_group_updated == "Early and after") # 1312 samples; 183 infants
+ps_abxN <- ps_filt_dol60_renorm %>% subset_samples(abx_group_updated == "None") # 282 samples; 38 infants
+ps_abxN_val <- ps_abxN %>% subset_samples(Sample_ID_R_final %in% validation_data$Sample) # 113 samples; 35 infants 
+# ps_abxN_df <- data.frame(sample_data(ps_abxN))
+# ps_abxN_val_df <- ps_abxN_df %>% subset(Sample_ID_R_final %in% validation_data$Sample)
+
+predict_early_only <- predict_microbiota_age(ps_early_only, sparse_rf_model, top_taxa_rf)
+predict_early_and_after <- predict_microbiota_age(ps_early_and_after, sparse_rf_model, top_taxa_rf)
+predict_abxN_val <- predict_microbiota_age(ps_abxN_val, sparse_rf_model, top_taxa_rf)
+
+predict_early_only <- data.frame(predict_early_only)
+predict_early_and_after <- data.frame(predict_early_and_after)
+predict_abxN_val <- data.frame(predict_abxN_val)
+
+# Combine all datasets into one
+combined_df <- bind_rows(
+  predict_early_only %>% mutate(Group = "Early only"),
+  predict_early_and_after %>% mutate(Group = "Early and after"),
+  predict_abxN_val %>% mutate(Group = "None"))
+
+rf_plot <- ggplot(combined_df, aes(x = DOL, y = Predicted_Microbiota_Age, color = Group)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "loess", se = TRUE, alpha = 0.2) +
+  labs(
+    x = "Chronological age (days)",
+    y = "Microbiota age (days)",
+    title = "Microbiota Maturation Across Groups"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = custom_colors_abx) + 
+  theme(
+    axis.title = element_text(size = 16, face = "bold"),      
+    axis.text = element_text(size = 14),                      
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5)
+  )
+ggsave("260202_GMdev_RF_abxN_model_validation.pdf", plot = rf_plot, bg = "transparent", width = 10, height = 10)
+
+########## Calculating and comparing MAZ values ##########
+# Bin DOL into age bins (month-based)
+combined_df2 <- combined_df %>%
+  mutate(
+    Month = case_when(
+      DOL <= 30 ~ "Month 1",
+      DOL <= 60 ~ "Month 2",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Calculate mean and sd of predicted microbiota age for each bin in reference group
+reference_group <- "None"
+reference_stats <- combined_df2 %>%
+  filter(abx_group == reference_group) %>%
+  group_by(DOL_bin) %>%
+  summarise(
+    mu_ref = mean(Predicted_Microbiota_Age, na.rm = TRUE),
+    sigma_ref = sd(Predicted_Microbiota_Age, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Merge stats back and calculate MAZ
+combined_df2 <- combined_df2 %>%
+  left_join(reference_stats, by = "DOL_bin") %>%
+  mutate(MAZ = (Predicted_Microbiota_Age - mu_ref) / sigma_ref)
+
+combined_df2$abx_group <- factor(combined_df2$abx_group, levels = c("Early and after", "Early only", "None"))
+
+### Plot MAZ per group
+MAZ_p <- ggplot(combined_df2, aes(x = abx_group, y = MAZ, fill = abx_group)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.6) +
+  scale_color_manual(values = custom_colors_abx) + 
+  scale_fill_manual(values = custom_colors_abx) + 
+  stat_compare_means(method = "wilcox.test", label = "p.signif", ref.group = reference_group) +
+  facet_wrap(~ Month) +
+  theme_minimal(base_size = 15) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 16, face = "bold"),
+    legend.position = "none"
+  ) +
+  ylab("MAZ (Microbiota-for-Age Z-score)") +
+  xlab(NULL)
+ggsave("251211_GMdev_predicted_MAZ_Comp.pdf", plot = MAZ_p, bg = "transparent", width = 10, height = 8)
+
+
+#save.image("251020_GM_dev_wP4_random_forests.RData")
+```
+
+Prevalence of top taxa over time 
+```{r}
+otu_df <- as.data.frame(otu_table(merged_ps))
+## Extract only species names from the taxa names
+rownames(otu_df) <- sapply(str_split(rownames(otu_df), "\\|"), function(x) if(length(x) >= 7) x[7] else NA)
+otu_df <- t(otu_df)
+otu_df <- data.frame(otu_df)
+otu_df <- otu_df %>% rownames_to_column("Sample_ID_R_final")
+
+## Get taxonomy at desired level (genus, species)
+tax_df <- as.data.frame(tax_table(ps_filt_dol60)) 
+rownames(tax_df) <- sapply(str_split(rownames(tax_df), "\\|"), function(x) if(length(x) >= 7) x[7] else NA)
+tax_df <- tax_df %>% rownames_to_column("TaxaID")
+
+## Choose desired taxonomic rank
+tax_level <- "Genus"
+
+## Map TaxaID to taxonomic name (e.g., genus)
+tax_map <- tax_df %>% select(TaxaID, !!sym(tax_level)) %>%
+  mutate(Taxon = if_else(is.na(!!sym(tax_level)), TaxaID,!!sym(tax_level)))
+
+## Reshape to long format
+otu_long <- otu_df %>% pivot_longer(-Sample_ID_R_final, names_to = "TaxaID", values_to = "Abundance") %>%
+  left_join(tax_map, by = "TaxaID")
+
+## Add prevalence column 
+otu_long <- otu_long %>% mutate(Prevalence = as.integer(Abundance > 0))
+
+## Merge with sample metadata
+meta_df <- as.data.frame(sample_data(merged_ps))
+
+otu_long <- otu_long %>% left_join(meta_df, by = "Sample_ID_R_final")
+otu_long_earlyOnly <- otu_long %>% filter(abx_group_updated == "Early only")
+otu_long_earlyAfter <- otu_long %>% filter(abx_group_updated == "Early and after")
+otu_long_naive <- otu_long %>% filter(abx_group_updated == "None")
+
+custom_colors_prev <- c("g__Clostridioides" = "#E69F00", "g__Clostridium" = "#F0E442", "g__Escherichia" = "#56B4E9",
+                                          "g__Enterobacter" = "#0072B2", "g__Klebsiella" = "#009E73", "g__Cutibacterium" = "#D55E00",
+                                          "g__Veillonella" = "#CC79A7", "g__Staphylococcus" = "#2B2D42", "g__Enterococcus" = "#FC8D62",
+                                          "g__Finegoldia" = "#8DA0CB")
+custom_colors_top6 <- c("g__Escherichia" = "#9F7E59","g__Enterobacter" = "#8C2B0E", "g__Klebsiella" = "#2F4B7A", "g__Staphylococcus" = "#B47E83","g__Finegoldia" = "#8DA0CB","g__Enterococcus" = "#F2A450")
+
+## Select top taxa based on average prevalence across all timepoints
+top_taxa <- otu_long %>%
+  group_by(Taxon) %>%
+  summarise(AvgPrev = mean(Prevalence) * 100) %>%
+  arrange(desc(AvgPrev)) %>%
+  slice_head(n = 10) 
+write.csv(top_taxa, "260203_GM_Dev_top10_prevalent_taxa.csv", row.names = F)
+
+top_taxa_eeo <- otu_long_earlyOnly %>%
+  group_by(Taxon) %>%
+  summarise(AvgPrev = mean(Prevalence) * 100) %>%
+  arrange(desc(AvgPrev)) %>%
+  slice_head(n = 10) 
+write.csv(top_taxa_eeo, "260203_GM_Dev_top10_prevalent_taxa_EEO.csv", row.names = F)
+
+top_taxa_eas <- otu_long_earlyAfter %>%
+  group_by(Taxon) %>%
+  summarise(AvgPrev = mean(Prevalence) * 100) %>%
+  arrange(desc(AvgPrev)) %>%
+  slice_head(n = 10) 
+write.csv(top_taxa_eas, "260203_GM_Dev_top10_prevalent_taxa_EAS.csv", row.names = F)
+
+top_taxa_naive <- otu_long_naive %>%
+  group_by(Taxon) %>%
+  summarise(AvgPrev = mean(Prevalence) * 100) %>%
+  arrange(desc(AvgPrev)) %>%
+  slice_head(n = 10) 
+write.csv(top_taxa_naive, "260203_GM_Dev_top10_prevalent_taxa_ABN.csv", row.names = F)
+
+## Select top 6 for plotting
+top_taxa <- top_taxa %>% slice_head(n = 6) 
+
+## prevalence summary over time 
+prevalence_summary <- otu_long %>% filter(Taxon %in% top_taxa$Taxon) %>% group_by(Taxon, DOL, abx_group_names) %>% summarise(Prevalence = mean(Prevalence) * 100, mean(Prevalence), .groups = "drop") %>% 
+  mutate(Taxon = factor(Taxon, levels = c("g__Escherichia", "g__Klebsiella", "g__Enterobacter", "g__Staphylococcus","g__Finegoldia","g__Enterococcus")))
+
+prevalence_DOL_plot <- ggplot(prevalence_summary, aes(x = DOL, y = Prevalence, color = Taxon)) +
+  geom_smooth(method = "loess", se = TRUE, span = 0.8, size = 1.2) +
+  scale_color_manual(values = custom_colors_top6) + 
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(
+    x = "Postnatal age [days]",
+    y = "Prevalence [% of cohort]",
+    color = "Taxon"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 14),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(size = 12),
+    legend.position = "top"
+  )
+ggsave("260203_GM_Dev_NoAfterOnly_top6_prevalent_taxa_DOL.pdf", plot = prevalence_DOL_plot, bg = "transparent", width = 10, height = 8)
+
+
+prevalence_DOL_plot_facet <- ggplot(prevalence_summary, aes(x = DOL, y = Prevalence, color = Taxon)) +
+  geom_smooth(method = "loess", se = TRUE, span = 0.9, size = 1.2) +
+  facet_wrap(~ abx_group_names, nrow = 1) +
+  scale_color_manual(values = custom_colors_top6) +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(
+    x = "Postnatal age [days]",
+    y = "Prevalence [% of cohort]",
+    color = "Taxon"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 14),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(size = 12),
+    legend.position = "top"
+  )
+ggsave("260203_GM_Dev_NoAfterOnly_top6_prevalent_taxa_DOL_faceted.pdf", plot = prevalence_DOL_plot_facet, bg = "transparent", width = 10, height = 6)
+```
+
+Stacked barplots at the genus level for preterm and near-term infants
+```{r}
+## Barplot of taxonomic composition (Genus level) by Enterotype #######
+# Step 1: Collapse to Genus level and transform to relative abundance
+ps_genus <- tax_glom(ps_infants, taxrank = "Genus")
+ps_relabun <- transform_sample_counts(ps_genus, function(x) x / sum(x))
+
+# Step 2: Extract OTU table
+otu_df <- as.data.frame(otu_table(ps_relabun))
+if (taxa_are_rows(ps_relabun)) {
+  otu_df <- t(otu_df)
+}
+otu_df <- as.data.frame(otu_df) %>%
+  tibble::rownames_to_column("Sample_ID_R_final")
+
+# Step 3: Pivot to long format
+otu_long <- otu_df %>%
+  pivot_longer(-Sample_ID_R_final, names_to = "OTU", values_to = "Abundance")
+
+# Step 4: Merge sample metadata
+sample_df <- data.frame(sample_data(ps_relabun)) 
+otu_long <- left_join(otu_long, sample_df, by = "Sample_ID_R_final")
+
+# Step 5: Add Genus information from tax_table
+tax_df <- as.data.frame(tax_table(ps_relabun)) %>%
+  tibble::rownames_to_column("OTU")
+
+otu_long <- left_join(otu_long, tax_df[, c("OTU", "Genus")], by = "OTU")
+
+# Step 6: Summarize mean relative abundance
+otu_summary <- otu_long %>%
+  filter(!is.na(Genus), !is.na(abx_group_names)) %>%
+  group_by(abx_group_names, Genus, DOL_bin) %>%
+  summarise(Mean_RelativeAbund = mean(Abundance), .groups = "drop")
+
+# Step 7: Identify top 15 genera across all enterotypes
+top_genera <- otu_summary %>%
+  group_by(Genus) %>%
+  summarise(Total = sum(Mean_RelativeAbund)) %>%
+  arrange(desc(Total)) %>%
+  head(15) %>%
+  pull(Genus)
+
+# Step 8: Group others into "Other"
+otu_summary <- otu_summary %>%
+  mutate(Genus = ifelse(Genus %in% top_genera, Genus, "Other")) %>%
+  group_by(abx_group_names, Genus, DOL_bin) %>%
+  summarise(Mean_RelativeAbund = sum(Mean_RelativeAbund), .groups = "drop")
+
+
+### Create a color-palette with genera belonging to the same families/order with similar hues
+custom_genus_colors <- c(
+
+  # --- Bacteroidota: blue-greens ---
+  "g__Bacteroides"      = "#088096",
+  "g__Parabacteroides"  = "#7AD4E4",
+
+  # --- Actinobacteriota: warm teals ---
+  "g__Bifidobacterium"  = "#9AC8A4",
+  "g__Cutibacterium"    = "#6EA57B",
+
+  # --- Firmicutes Clostridia: orange-browns ---
+  "g__Clostridium"        = "#B07159",
+  "g__Erysipelatoclostridium" = "#6C3322",
+
+  # --- Firmicutes Bacilli: pink-reds ---
+  "g__Enterococcus"     = "#F2A450",
+  "g__Staphylococcus"   = "#B47E83",
+  "g__Streptococcus"    = "#68434E",
+
+  # --- Proteobacteria: blue-purple tones ---
+  "g__Citrobacter"      = "#DFCB91",
+  "g__Enterobacter"     = "#8C2B0E",
+  "g__Escherichia"      = "#9F7E59",
+  "g__Klebsiella"       = "#2F4B7A",
+  "g__Serratia"         = "#7C97C2",
+
+  # --- Negativicutes (Veillonellaceae): olive-greens ---
+  "g__Veillonella"      = "#A8A55C",
+    # --- Other: neutral gray ---
+  "Other"               = "#A9A9A9"   # darkgray
+)
+
+genus_order <- c(
+  # Bacteroidota
+  "g__Bacteroides",
+  "g__Parabacteroides",
+
+  # Actinobacteriota
+  "g__Bifidobacterium",
+  "g__Cutibacterium",
+
+  # Firmicutes: Clostridia
+  "g__Clostridium",
+  "g__Erysipelatoclostridium",
+
+  # Firmicutes: Bacilli
+  "g__Enterococcus",
+  "g__Staphylococcus",
+  "g__Streptococcus",
+
+  # Proteobacteria (Enterobacterales)
+  "g__Citrobacter",
+  "g__Enterobacter",
+  "g__Escherichia",
+  "g__Klebsiella",
+  "g__Serratia",
+
+  # Negativicutes
+  "g__Veillonella",
+
+  # Other
+  "Other"
+)
+otu_summary$Genus <- factor(otu_summary$Genus, levels = genus_order)
+
+# Step 9: Plot
+abx_group_DOL_bin_genus_bp <- ggplot(otu_summary, aes(x = abx_group_names, y = Mean_RelativeAbund, fill = Genus)) +
+  geom_bar(stat = "identity", width = 0.85, color = "black") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = custom_genus_colors) +
+  facet_wrap(~ DOL_bin, nrow = 2, strip.position = "top") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16, face = "bold"),
+    axis.title.y = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    strip.text = element_text(size = 16, face = "bold"),  # Larger facet titles
+    panel.spacing = unit(1.2, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
+  ) +
+  labs(
+    title = "Average Genus-Level Composition by Enterotype",
+    x = NULL, y = "Relative Abundance"
+  )
+ggsave("260204_P4_GM_Dev_near-term_barplot_genus.pdf", plot = abx_group_DOL_bin_genus_bp, bg = "transparent", width = 20, height = 8)
+
+```
+
+
+
+Random Forest analysis to predict last time point preterm samples
+```{r}
+library(dplyr)
+library(tidyr)
+library(caret)
+library(ranger)
+library(Boruta)
+library(doParallel)
+library(ggplot2)
+library(patchwork)
+
+load("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/251020_GM_dev_wP4_random_forests.RData")
+load("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260114_P4_GM_Dev_RF_last_tp.RData")
+
+# Metadata
+merged_ps_meta
+
+# Get species abundance, richness and shannon values
+metaphlan_mat <- data.frame(otu_table(merged_ps, taxa_are_rows = TRUE))
+metaphlan_mat_t <- t(metaphlan_mat)
+
+### Get species richness and shannon diversity values
+ps.filt.trans <- transform_sample_counts(merged_ps, function(x) trunc(x*100000))
+adiv <- estimate_richness(ps.filt.trans, measures=c('Observed', 'Shannon'))
+adiv <- adiv %>% dplyr::rename(Richness = Observed)
+
+metaphlan_mat_t2 <- merge(metaphlan_mat_t, adiv, by = "row.names")
+rownames(metaphlan_mat_t2) <- metaphlan_mat_t2$Row.names
+metaphlan_mat_t2$Row.names <- NULL
+
+metaphlan_mat <- data.frame(t(metaphlan_mat_t2))
+metaphlan_mat$temp <- rownames(metaphlan_mat)
+
+metaphlan_mat2 <- metaphlan_mat %>%
+  mutate(temp = ifelse(grepl("\\|", temp), sapply(str_split(temp, "\\|"), function(x) if(length(x) >= 7) x[7] else NA),
+                       temp),
+         temp = gsub("s__","", temp))
+rownames(metaphlan_mat2) <- metaphlan_mat2$temp
+metaphlan_mat2$temp <- NULL
+
+# Transpose taxonomic data so rows = samples, cols = taxa features
+metaphlan_samp <- t(metaphlan_mat2)
+
+##load preterm shortbred output
+arg.full <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/250905_P4_GM_Dev_ShortBRED_merged_output_n2585.txt"))
+arg.full <- arg.full %>% mutate(Sample_ID_R_final = gsub("-", ".", paste0("p4_", Sample)))
+arg.p4 <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/251022_GM_Dev_P4_shortBRED_joint_output.txt"))
+arg.p4 <- arg.p4 %>% mutate(Sample_ID_R_final = paste0("p4_", gsub("_", ".", Sample)))
+arg_df <- rbind(arg.full, arg.p4)
+
+arg.wide <- as.data.frame(dcast(arg_df, Sample_ID_R_final ~ Family, value.var = 'Count', fun.aggregate = sum))
+row.names(arg.wide) <- arg.wide$Sample_ID_R_final
+arg.wide <- arg.wide[, c(-1)]
+
+##sum counts to get RPKM per sample
+arg.wide$RPKM <- rowSums(arg.wide)
+
+##get ARG richness
+arg.wide$ARG_Richness <- specnumber(arg.wide[, 1:ncol(arg.wide)-1])
+
+# Merge arg.wide to metadata 
+## First add a paperID column to merge with metadata file
+arg.wide$Sample_ID_R_final <- row.names(arg.wide)
+
+#####--Align samples ----------------#################
+common_samples <- Reduce(intersect, list(rownames(metaphlan_samp), rownames(arg.wide), merged_ps_meta$Sample_ID_R_final))
+
+metaphlan_mat_sub <- metaphlan_samp[common_samples, , drop = FALSE]
+shortbred_mat_sub <- arg.wide[common_samples, , drop = FALSE]
+
+meta_sub <- merged_ps_meta %>% filter(Sample_ID_R_final %in% common_samples) %>% arrange(match(Sample_ID_R_final, common_samples))
+
+## ---- Build feature matrix ---- ############
+X <- cbind(metaphlan_mat_sub, shortbred_mat_sub)
+X$Sample_ID_R_final <- NULL
+
+## ---- Log-transform and filter constant features ----
+pseudocount <- 1e-6
+X_log <- log10(X + pseudocount)
+
+global_sd <- apply(X_log, 2, sd, na.rm = TRUE)
+X_log <- X_log[, global_sd > 0, drop = FALSE]
+
+## ---- Outcome ----
+meta_sub$Group <- factor(make.names(meta_sub$abx_group))   # avoid caret probability naming issues
+
+rf_df <- data.frame(Group = meta_sub$Group, DOL = meta_sub$DOL, Patient = meta_sub$Patient, X_log, check.names = FALSE)
+
+
+set.seed(123)
+
+rf_res <- run_boruta_rf_parallel(
+  data = rf_df,          # Group + predictors
+  patient_col = "Patient",
+  time_col = "DOL",
+  train_p = 0.6,         # define training cohort once
+  n_iter = 100,
+  inner_p = 0.8,
+  n_cores = 6,
+  use_tentative = FALSE
+)
+
+perf_long <- rf_res$inner_perf_long
+imp_avg   <- rf_res$inner_importance_summary
+imp_avg$Feature <- gsub("^`|`$", "", imp_avg$Feature)
+
+######----- Plot performance metrics ----------######
+gg_box <-ggplot(perf_long, aes(x = Class, y = Value)) +
+  geom_boxplot(outlier.size = 0.8) +
+  facet_wrap(~ Metric, nrow = 1) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+gg_box
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260119_P4_GM_dev_RF_train_data_performance_metrics.pdf", plot = gg_box, bg = "transparent", width = 10, height = 6)
+
+
+cm <- rf_res$final_confusion
+tab <- as.matrix(cm$table)
+classes <- colnames(tab)
+N <- sum(tab)
+
+cm_df <- as.data.frame(cm$table)
+colnames(cm_df) <- c("Predicted", "Actual", "Freq")
+
+gg_cm <- ggplot(cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "black", linewidth = 0.6) +
+  geom_text(aes(label = Freq), size = 5) +
+  scale_fill_gradientn(
+    colours = c("white", "#9ecae1", "#08306b"),
+    values  = scales::rescale(c(0, max(cm_df$Freq), max(cm_df$Freq))),
+    name = "Count"
+  ) +
+  scale_x_discrete(position = "top") +
+  labs(x = "Actual", y = "Predicted") +
+  coord_equal() +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_text(face = "bold")
+  )
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260114_P4_GM_dev_RF_last_tp_samples.pdf", plot = gg_cm, bg = "transparent", width = 10, height = 8)
+
+outer_perf <- dplyr::bind_rows(lapply(classes, function(cls) {
+  TP <- tab[cls, cls]
+  FN <- sum(tab[, cls]) - TP
+  FP <- sum(tab[cls, ]) - TP
+  TN <- N - TP - FN - FP
+
+  data.frame(
+    Class = cls, TP = TP, TN = TN, FP = FP, FN = FN,
+    Accuracy = (TP + TN) / N,
+    Sensitivity = TP / (TP + FN),
+    Specificity = TN / (TN + FP)
+  )
+}))
+outer_perf
+
+top20 <- imp_avg %>%
+  arrange(desc(Mean_Importance)) %>%
+  dplyr::slice(1:21)
+write.csv(top20, "260119_top20_features_boruta.csv", row.names = F)
+
+top20_mod <- read_excel("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260119_top20_features_boruta_labeled.xlsx") %>% arrange(desc(Mean_Importance))
+
+p_top20_features <- ggplot(top20_mod, aes(x = Mean_Importance, y = reorder(Label, Mean_Importance))) +
+  geom_col() +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank()) +
+  labs(x = "Mean permutation importance (inner resamples)",
+       y = "Feature",
+       title = "Top 20 features (averaged over 100 inner splits)")
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260114_P4_GM_dev_RF_top20_boruta_features.pdf", plot = p_top20_features, bg = "transparent", width = 10, height = 8)
+#save.image("260114_P4_GM_Dev_RF_last_tp.RData")
+
+outer_perf_long <- outer_perf %>%
+  pivot_longer(
+    cols = c(Accuracy, Sensitivity, Specificity),
+    names_to = "Metric",
+    values_to = "Value"
+  )
+
+gg_perf_last_tp <- ggplot(outer_perf_long, aes(x = Class, y = Value)) +
+  geom_col(fill = "#3182bd", width = 0.7) +
+  facet_wrap(~ Metric, nrow = 1) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    x = NULL,
+    y = "Performance",
+    title = "Random forest performance on held-out test patients"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank()
+  )
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260114_P4_GM_dev_RF_perf_metrics_last_tp.pdf", plot = gg_perf_last_tp, bg = "transparent", width = 10, height = 8)
+
+
+train_idx <- createDataPartition(rf_df$Group, p = 0.7, list = FALSE)
+train_df <- rf_df[train_idx, ]
+test_df  <- rf_df[-train_idx, ]
+
+## ---- Remove NZV (near-zero variance features) based on training only ----
+train_x <- train_df[, -1, drop = FALSE]
+test_x  <- test_df[,  -1, drop = FALSE]
+
+## Need to remove NZV features from the test dataset as well since they must have the exact same features space as the training set
+nzv_idx <- nearZeroVar(train_x)
+if (length(nzv_idx) > 0) {
+  train_x <- train_x[, -nzv_idx, drop = FALSE]
+  test_x  <- test_x[,  -nzv_idx, drop = FALSE]
+}
+
+train_y <- train_df$Group
+test_y  <- test_df$Group
+
+########################################-------- Boruta Feature Selection --------------------###################################
+## ---- Parallel backend (Boruta can benefit from faster RF backend; caret CV will also use it later) ----
+n_cores <- max(1, parallel::detectCores() - 1)
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+
+set.seed(123)
+
+## ---- Boruta ----
+# doTrace = 1 prints progress; maxRuns controls iterations (increase for stability)
+bor <- Boruta(x = train_x, y = train_y, doTrace = 1, maxRuns = 200, getImp = function(x, y, ...) {
+    # Custom importance using ranger permutation importance
+    # Boruta expects a numeric importance vector per feature
+    rf <- ranger(
+      dependent.variable.name = "y",
+      data = data.frame(y = y, x),
+      classification = TRUE,
+      importance = "permutation",
+      num.trees = 800,
+      ...
+    )
+    rf$variable.importance
+  }
+)
+
+## ---- Resolve tentative features ----
+bor_fixed <- TentativeRoughFix(bor)
+
+## Confirmed important features
+confirmed_feats <- getSelectedAttributes(bor_fixed, withTentative = FALSE)
+
+length(confirmed_feats)
+head(confirmed_feats)
+
+############################----Train sparse Random Forest using Boruta-selected features---------------###################################
+# Build sparse training/testing datasets
+train_sparse <- data.frame(Group = train_y, train_x[, confirmed_feats, drop = FALSE], check.names = FALSE)
+test_sparse  <- data.frame(Group = test_y,  test_x[,  confirmed_feats, drop = FALSE], check.names = FALSE)
+
+## ---- caret CV control ----
+ctrl_all <- trainControl(
+  method = "cv",
+  number = 10,              # change folds here
+  classProbs = TRUE,
+  summaryFunction = defaultSummary,
+  allowParallel = TRUE
+)
+
+## ---- Train sparse RF (ranger) ----
+set.seed(23)
+rf_sparse <- train(
+  Group ~ .,
+  data = train_sparse,
+  method = "ranger",
+  trControl = ctrl_all,
+  tuneLength = 7,
+  importance = "permutation",
+  num.trees = 1500,
+  metric = "Accuracy"
+)
+
+stopCluster(cl)
+registerDoSEQ()
+
+rf_sparse
+rf_sparse$bestTune
+
+############################----Predict test set + confusion matrix---------------###################################
+
+pred_test <- predict(rf_sparse, newdata = test_sparse)
+cm <- confusionMatrix(pred_test, test_sparse$Group)
+cm
+
+cm_df <- as.data.frame(cm$table)
+colnames(cm_df) <- c("Predicted", "Actual", "Freq")
+
+gg_cm <- ggplot(cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 4) +
+  scale_x_discrete(position = "top") +
+  labs(x = "Actual", y = "Predicted", fill = "Count") +
+  coord_equal() +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid = element_blank())
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260113_P4_GM_dev_RF_all_samples.pdf", plot = gg_cm, bg = "transparent", width = 10, height = 8)
+
+imp_sparse <- varImp(rf_sparse, scale = TRUE)$importance
+imp_sparse$Feature <- rownames(imp_sparse)
+imp_sparse$Feature <- gsub("^`|`$", "", imp_sparse$Feature)
+
+if ("Overall" %in% colnames(imp_sparse)) {
+  imp_sparse$Weight <- imp_sparse$Overall
+} else {
+  imp_sparse$Weight <- rowMeans(imp_sparse[, setdiff(colnames(imp_sparse), "Feature"), drop = FALSE])
+}
+############################----top feature importances (15 strongest)---------------###################################
+
+imp_sparse <- imp_sparse %>% arrange(desc(Weight))
+write.csv(imp_sparse, "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260113_P4_GM_dev_RF_important_features_all_samples.csv", row.names = F)
+n_top_plot <- min(20, nrow(imp_sparse))
+imp_top <- imp_sparse[1:n_top_plot, ]
+
+gg_weights <- ggplot(imp_top, aes(x = Weight, y = reorder(Feature, Weight))) +
+  geom_col() +
+  labs(x = "Importance", y = "Feature") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank())
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/RandomForest/Boruta/260113_P4_GM_dev_RF_important_features_all_samples.pdf", plot = gg_weights, bg = "transparent", width = 20, height = 8)
+
+#################----Per-class TP/TN/FP/FN + Accuracy/Sensitivity/Specificity on test set---------------#########################
+tab <- as.matrix(cm$table)  # rows=Pred, cols=Actual
+classes <- colnames(tab)
+N <- sum(tab)
+
+perf_per_class <- lapply(classes, function(cls) {
+  TP <- tab[cls, cls]
+  FN <- sum(tab[, cls]) - TP
+  FP <- sum(tab[cls, ]) - TP
+  TN <- N - TP - FN - FP
+
+  data.frame(
+    Group = cls,
+    TP = TP, TN = TN, FP = FP, FN = FN,
+    Accuracy = (TP + TN) / N,
+    Sensitivity = ifelse((TP + FN) == 0, NA_real_, TP / (TP + FN)),
+    Specificity = ifelse((TN + FP) == 0, NA_real_, TN / (TN + FP))
+  )
+}) %>% bind_rows()
+
+perf_long <- perf_per_class %>%
+  select(Group, Accuracy, Sensitivity, Specificity) %>%
+  pivot_longer(cols = c(Accuracy, Sensitivity, Specificity),
+               names_to = "Metric", values_to = "Value")
+
+gg_perf <- ggplot(perf_long, aes(x = Group, y = Value, fill = Metric)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = sprintf("%.2f", Value)),
+            position = position_dodge(width = 0.8),
+            vjust = -0.25, size = 3) +
+  scale_y_continuous(limits = c(0, 1), expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Group", y = "Performance (test set)",
+       title = "Sparse RF (Boruta-selected) performance by group") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.x = element_blank())
+
+perf_per_class
+gg_perf
+
+#save.image("260112_RandomForest_P4.RData")
+
+```
+
+
+GA-matched (by MatchIt) SVM
+```{r}
+library(kernlab)
+load("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/260109_Preterm_GA_matched_PS_object.RData")
+
+ps_infants_ga_meta <- data.frame(sample_data(ps_infants_ga))
+
+#### Summarize Metadata #########
+meta_pt <- ps_infants_ga_meta
+# Set categorical variables as factors !!!!!!!!!!! Modify these as needed later !!!!!!!!!!!!!!!!!!!!
+categorical_vars <- c('Patient','abx_group', 'Sex', 'Delivery_route', 'Cohort')
+
+meta_pt[,categorical_vars] <- lapply(meta_pt[,categorical_vars], factor)
+
+numerical_vars <- c("Birthweight", "abx_exposure_count", "Gestational_age_weeks", "PostmenstrualAgeWeeks")
+meta_pt[,numerical_vars] <- lapply(meta_pt[,numerical_vars], as.numeric)
+
+## All numerical variables are non-normal so we'll use median (IQR) instead of mean (SD)
+normality_results <- lapply(numerical_vars, function(v) {
+  p <- shapiro.test(meta_pt[[v]])$p.value
+  data.frame(variable = v, p_value = p)
+}) %>% bind_rows()
+
+
+# Generate metadata comparison table 
+comp_vars <- c("Birthweight", "abx_exposure_count", "Gestational_age_weeks", "PostmenstrualAgeWeeks",'Cohort', 'Sex', 'Delivery_route')
+
+
+tab_pt <- CreateTableOne(vars=comp_vars,
+                         strata='abx_group', 
+                         data=meta_pt)
+tab_plot_pt <- print(tab_pt, 
+                     showAllLevels = TRUE,
+                     quote        = FALSE,
+                     noSpaces     = TRUE,
+                     test         = TRUE,
+                     contDigits   = 1,
+                     nonnormal    = numerical_vars,  
+                     printToggle  = FALSE,
+                     dropEqual    = TRUE,
+                     explain      = FALSE)
+
+# Convert to dataframe
+tab_pt_df <- as.data.frame(tab_plot_pt) %>% rownames_to_column(var = "Variable")
+
+# Set Table header
+header <- str_squish(str_remove("Table 1. Infant demographics", "\n"))
+# Set Table footer
+footer <- str_squish(str_remove("Numbers are either No. or mean values", "\n"))
+# Set custom_tab() defaults
+customtab_defaults()
+# Create the flextable object
+flextable_processed_samples <- custom_tab(tab_pt_df, header, footer)
+
+# Save as word .docx
+save_as_docx(flextable_processed_samples, path = "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/260110_metadata.docx",
+             pr_section = prop_section(page_size = page_size(orient = "landscape"), type = "continuous"))
+
+#### Pairwise wilcoxon tests to confirm matching PMA and GA ####
+##### There are still significant differences between the None and abx-exposed groups but the differences are less than before
+PMA_stat <- ps_infants_ga_meta %>% wilcox_test(PostmenstrualAgeWeeks ~ abx_group) %>% adjust_pvalue(method = "BH") %>% add_significance()
+GA_stat <-  ps_infants_ga_meta %>% wilcox_test(Gestational_age_weeks ~ abx_group) %>% adjust_pvalue(method = "BH") %>% add_significance()
+
+####################################
+
+metaphlan_mat <- data.frame(otu_table(ps_infants_ga, taxa_are_rows = TRUE))
+metaphlan_mat_t <- t(metaphlan_mat)
+
+### Get species richness and shannon diversity values
+ps.filt.trans <- transform_sample_counts(ps_infants_ga, function(x) trunc(x*100000))
+adiv <- estimate_richness(ps.filt.trans, measures=c('Observed', 'Shannon'))
+adiv <- adiv %>% dplyr::rename(Richness = Observed)
+
+metaphlan_mat_t2 <- merge(metaphlan_mat_t, adiv, by = "row.names")
+rownames(metaphlan_mat_t2) <- metaphlan_mat_t2$Row.names
+metaphlan_mat_t2$Row.names <- NULL
+
+metaphlan_mat <- data.frame(t(metaphlan_mat_t2))
+metaphlan_mat$temp <- rownames(metaphlan_mat)
+
+metaphlan_mat2 <- metaphlan_mat %>%
+  mutate(temp = ifelse(grepl("\\|", temp), sapply(str_split(temp, "\\|"), function(x) if(length(x) >= 7) x[7] else NA),
+                       temp),
+         temp = gsub("s__","", temp))
+rownames(metaphlan_mat2) <- metaphlan_mat2$temp
+metaphlan_mat2$temp <- NULL
+
+# Transpose taxonomic data so rows = samples, cols = taxa features
+metaphlan_samp <- t(metaphlan_mat2)
+
+##load preterm shortbred output
+arg.full <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/250905_P4_GM_Dev_ShortBRED_merged_output_n2585.txt"))
+arg.full <- arg.full %>% mutate(Sample_ID_R_final = gsub("-", ".", paste0("p4_", Sample)))
+arg.p4 <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/251022_GM_Dev_P4_shortBRED_joint_output.txt"))
+arg.p4 <- arg.p4 %>% mutate(Sample_ID_R_final = paste0("p4_", gsub("_", ".", Sample)))
+arg_df <- rbind(arg.full, arg.p4)
+
+arg.wide <- as.data.frame(dcast(arg_df, Sample_ID_R_final ~ Family, value.var = 'Count', fun.aggregate = sum))
+row.names(arg.wide) <- arg.wide$Sample_ID_R_final
+arg.wide <- arg.wide[, c(-1)]
+
+##sum counts to get RPKM per sample
+arg.wide$RPKM <- rowSums(arg.wide)
+
+##get ARG richness
+arg.wide$Richness <- specnumber(arg.wide[, 1:ncol(arg.wide)-1])
+
+# Merge arg.wide to metadata 
+## First add a paperID column to merge with metadata file
+arg.wide$Sample_ID_R_final <- row.names(arg.wide)
+
+## load near-term shortbred output
+arg_term <- as.data.frame(read.delim("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Shortbred/251016_DrewG_term_n162_shortbred_merged.txt"))
+
+arg_term_wide <- as.data.frame(dcast(arg_term, Sample ~ Family, value.var = 'Count', fun.aggregate = sum))
+row.names(arg_term_wide) <- arg_term_wide$Sample
+arg_term_wide <- arg_term_wide[, c(-1)]
+
+##sum counts to get RPKM per sample
+arg_term_wide$RPKM <- rowSums(arg_term_wide)
+
+##get ARG richness
+arg_term_wide$Richness <- specnumber(arg_term_wide[, 1:ncol(arg_term_wide)-1])
+
+# Merge arg.wide to metadata 
+## First add a paperID column to merge with metadata file
+arg_term_wide$Sample <- row.names(arg_term_wide)
+arg_term_wide <- arg_term_wide %>% dplyr::rename(Sample_ID_R_final = Sample) %>% dplyr::rename(ShortBRED_richness = Richness)
+
+#### Merge preterm and near-term shortbred outputs
+arg_full <- rbind(arg.wide, arg_term_wide)
+
+# Merge with metadata
+ps_infants_ga_meta_ids <- ps_infants_ga_meta %>% select(Sample_ID_R_final)
+arg_full.df <- merge(ps_infants_ga_meta_ids, arg_full, by = "Sample_ID_R_final") 
+rownames(arg_full.df) <- arg_full.df$Sample_ID_R_final
+
+### Build combined feature matrix (samples x features)
+X <- cbind(metaphlan_samp, arg_full.df)
+X$Sample_ID_R_final <- NULL
+#X <- merge(metaphlan_samp, arg_full, by = "row.names")
+dim(X)
+
+## Match order with metadata
+meta_sub <- ps_infants_ga_meta %>%
+  arrange(match(Sample_ID_R_final, rownames(X)))
+
+## --------------------------------------------------
+## 3. Log transform & remove globally zero-variance features
+## --------------------------------------------------
+pseudocount <- 1e-6
+X_log <- log10(X + pseudocount)
+
+global_sd <- apply(X_log, 2, sd, na.rm = TRUE)
+X_log <- X_log[, global_sd > 0, drop = FALSE]
+
+## --------------------------------------------------
+## 4. Build modeling data frame & train/test split
+## --------------------------------------------------
+# Create antibiotic exposed vs unexposed vs term class label
+meta_sub <- meta_sub %>% mutate(abx_group_simple = case_when(abx_group == "Early only" ~ "Preterm_abx_exposed",
+                                                             abx_group == "Early and after" ~ "Preterm_abx_exposed",
+                                                             abx_group == "None" ~ "Preterm_abx_naive",
+                                                             abx_group == "None Near-term" ~ "Near-term_abx_naive")) %>%
+  mutate(abx_group_simple = factor(abx_group_simple, levels = c("Preterm_abx_exposed", "Preterm_abx_naive", "Near-term_abx_naive"))) %>%
+  mutate(term_group = case_when(abx_group == "Early only" ~ "Preterm",
+                                 abx_group == "Early and after" ~ "Preterm",
+                                 abx_group == "None" ~ "Preterm",
+                                 abx_group == "None Near-term" ~ "Near-term")) %>%
+  mutate(term_group = factor(term_group, levels = c("Preterm", "Near-term")))
+# Make class labels a factor (ensure they’re syntactically valid)
+
+#meta_sub$Group <- factor(make.names(meta_sub$abx_group))
+#meta_sub$Group <- factor(make.names(meta_sub$abx_group_simple))
+meta_sub$Group <- factor(make.names(meta_sub$term_group))
+
+# Combine the response (Group) with the scaled features into a single data frame
+# Group goes in the first column, all features after
+svm_df <- data.frame(
+  Group = meta_sub$Group,
+  X_log,
+  check.names = FALSE
+)
+
+set.seed(123)  # For reproducibility of the split
+
+# Stratified split: create training indices, keeping class proportions
+# p = 0.6 means 60% of samples go to the training set
+train_idx <- createDataPartition(svm_df$Group, p = 0.6, list = FALSE)
+train_df <- svm_df[train_idx, ]
+test_df  <- svm_df[-train_idx, ]
+
+train_x <- train_df[, -1, drop = FALSE]
+train_y <- train_df$Group
+test_x  <- test_df[,  -1, drop = FALSE]
+test_y  <- test_df$Group
+
+## --------------------------------------------------
+## 5. Remove near-zero-variance predictors (training-based)
+## --------------------------------------------------
+nzv_idx <- nearZeroVar(train_x)
+if (length(nzv_idx) > 0) {
+  train_x <- train_x[, -nzv_idx, drop = FALSE]
+  test_x  <- test_x[,  -nzv_idx, drop = FALSE]
+}
+
+train_df_clean <- data.frame(Group = train_y, train_x, check.names = FALSE)
+test_df_clean  <- data.frame(Group = test_y,  test_x,  check.names = FALSE)
+write.csv(train_df_clean, 
+          "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/SVM/term_group/260110_term_group_SVM_train_dataset.csv", row.names = T)
+write.csv(test_df_clean, "~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/SVM/term_group/260110_term_group_SVM_test_dataset.csv", row.names = T)
+
+## --------------------------------------------------
+## 6. Parallel backend for caret
+## --------------------------------------------------
+n_cores <- max(1, parallel::detectCores() - 2)
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+
+cat("Using", n_cores, "cores\n")
+
+## --------------------------------------------------
+## 7. Initial linear SVM (for feature importance)
+##    (linear kernel so we can interpret “weights”)
+## --------------------------------------------------
+ctrl_all <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = defaultSummary,
+  allowParallel = TRUE
+)
+
+set.seed(123)
+svm_full <- train(
+  Group ~ .,
+  data = train_df_clean,
+  method = "svmLinear",
+  trControl = ctrl_all,
+  preProcess = c("center", "scale"),
+  tuneLength = 5,
+  metric = "Accuracy"
+)
+
+## --------------------------------------------------
+## 8. Rank features by importance from full linear SVM
+## --------------------------------------------------
+imp_full <- varImp(svm_full, scale = TRUE)$importance
+imp_full$Feature <- rownames(imp_full)
+
+# For binary classification, caret usually gives an "Overall" column
+if ("Overall" %in% colnames(imp_full)) {
+  imp_full$Weight <- imp_full$Overall
+} else {
+  # in case of multiple class-specific columns, average them
+  imp_full$Weight <- rowMeans(imp_full[, setdiff(colnames(imp_full), "Feature"), drop = FALSE])
+}
+
+imp_full <- imp_full %>%
+  arrange(desc(Weight))
+
+## --------------------------------------------------
+## 9. Feature-selection: smallest top-K set with CV accuracy ≥ 0.90
+##    (search over top N candidates to keep runtime reasonable)
+## --------------------------------------------------
+max_candidates <- min(200, nrow(imp_full))  # train on the top 200 most important features
+candidate_feats <- imp_full$Feature[1:max_candidates] # Extract names of these top features
+
+k_values <- seq(5, max_candidates, by = 5) # test k = 5, 10, 15, ... up to max_candidates to reduce runtime
+
+# Initialize variables to store
+best_k <- NA # the final optimal number of features
+best_acc <- -Inf # accuracy achieved at best_k
+acc_by_k <- data.frame(k = integer(), Accuracy = numeric()) # table storing accuracy results for each tested K
+
+for (k in k_values) {
+  feats_k <- candidate_feats[1:k]
+  train_k <- train_df_clean[, c("Group", feats_k), drop = FALSE] # Build a training dataframe containing the outcome variable and only the top k predictors
+  
+  set.seed(123 + k) # Each K gets a slightly different RNG seed to avoid fold repetition bias.
+  svm_k <- train(
+    Group ~ .,
+    data = train_k,
+    method = "svmLinear",
+    trControl = ctrl_all,
+    preProcess = c("center", "scale"),
+    tuneLength = 3,
+    metric = "Accuracy"
+  )
+  
+  acc_k <- max(svm_k$results$Accuracy)
+  acc_by_k <- rbind(acc_by_k, data.frame(k = k, Accuracy = acc_k))
+  
+  if (acc_k > best_acc) {
+    best_acc <- acc_k
+    best_k <- k
+  }
+  
+  if (acc_k >= 0.90) {
+    best_k <- k
+    best_acc <- acc_k
+    break
+  }
+}
+
+cat("Chosen K (sparse model) =", best_k, "with CV Accuracy =", round(best_acc, 3), "\n") ## best_k = 190, accuracy = 0.586
+
+## --------------------------------------------------
+## 10. Train final sparse SVM on top-K features
+## --------------------------------------------------
+top_feats_sparse <- candidate_feats[1:best_k]
+
+train_sparse <- train_df_clean[, c("Group", top_feats_sparse), drop = FALSE]
+test_sparse  <- test_df_clean[, c("Group", top_feats_sparse), drop = FALSE]
+
+set.seed(999)
+svm_sparse <- train(
+  Group ~ .,
+  data = train_sparse,
+  method = "svmLinear",
+  trControl = ctrl_all,
+  preProcess = c("center", "scale"),
+  tuneLength = 5,
+  metric = "Accuracy"
+)
+
+stopCluster(cl)
+registerDoSEQ()
+
+## --------------------------------------------------
+## 11. Predict held-out test set with sparse SVM
+## --------------------------------------------------
+pred_test <- predict(svm_sparse, newdata = test_sparse)
+cm <- confusionMatrix(pred_test, test_sparse$Group)
+cm
+
+## --------------------------------------------------
+## 12. Plot (a) Confusion matrix heatmap
+## --------------------------------------------------
+cm_df <- as.data.frame(cm$table)
+colnames(cm_df) <- c("Predicted", "Actual", "Freq")
+
+gg_cm <- ggplot(cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 5) +
+  scale_fill_gradient(low = "#d9f0d3", high = "#1a9850") +
+  scale_x_discrete(position = "top") +
+  labs(x = "Actual", y = "Predicted", fill = "Count") +
+  coord_equal() +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    plot.margin = margin(5, 10, 5, 5)
+  )
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/SVM/term_group/260110_GMdev_SVM_term_group_confusion_matrix_validation.pdf", plot = gg_cm, bg = "transparent", width = 10, height = 8)
+
+## --------------------------------------------------
+## 13. Plot (b) Bar plot of sparse-feature “weights”
+## --------------------------------------------------
+imp_sparse <- varImp(svm_sparse, scale = TRUE)$importance
+imp_sparse$Feature <- rownames(imp_sparse)
+
+if ("Overall" %in% colnames(imp_sparse)) {
+  imp_sparse$Weight <- imp_sparse$Overall
+} else {
+  imp_sparse$Weight <- rowMeans(imp_sparse[, setdiff(colnames(imp_sparse), "Feature"), drop = FALSE])
+}
+
+imp_sparse <- imp_sparse %>%
+  arrange(desc(Weight))
+
+# Take all sparse features, or e.g. top 15 as in the figure
+n_top_plot <- min(20, nrow(imp_sparse))
+imp_top20 <- imp_sparse[1:n_top_plot, ]
+
+gg_weights <- ggplot(imp_top20,
+                     aes(x = Weight,
+                         y = reorder(Feature, Weight))) +
+  geom_col() +
+  labs(x = "Weight", y = "Feature") +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(5, 5, 5, 10)
+  )
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/SVM/term_group/260110_GMdev_term_group_SVM_feature_importance_top20.pdf", plot = gg_weights, bg = "transparent", width = 20, height = 8)
+
+## ---- Per-group metrics from confusion matrix ----
+
+# Confusion matrix as a plain matrix
+tab <- as.matrix(cm$table)
+classes <- colnames(tab)  # rows = true classes (reference)
+# Total number of test samples
+N <- sum(tab)
+
+
+############ Change################
+perf_per_class <- lapply(classes, function(cls) {
+  # TP = predicted cls AND actual cls (diagonal element for cls)
+  TP <- tab[cls, cls]
+  
+  # FN = actual cls but predicted not cls (rest of the column)
+  FN <- sum(tab[, cls]) - TP
+  
+  # FP = predicted cls but actual not cls (rest of the row)
+  FP <- sum(tab[cls, ]) - TP
+  
+  # TN = everything else
+  TN <- N - TP - FN - FP
+  
+  Accuracy    <- (TP + TN) / N
+  Sensitivity <- ifelse((TP + FN) == 0, NA_real_, TP / (TP + FN))
+  Specificity <- ifelse((TN + FP) == 0, NA_real_, TN / (TN + FP))
+  
+  data.frame(
+    Group = cls,
+    TP = TP, TN = TN, FP = FP, FN = FN,
+    Accuracy = Accuracy,
+    Sensitivity = Sensitivity,
+    Specificity = Specificity,
+    stringsAsFactors = FALSE
+  )
+}) %>% bind_rows()
+##################################
+
+# Long format: one row per (Group, Metric)
+perf_long <- perf_per_class %>%
+  pivot_longer(
+    cols = c(Accuracy, Sensitivity, Specificity),
+    names_to = "Metric",
+    values_to = "Value"
+  )
+
+gg_perf <- ggplot(
+  perf_long,
+  aes(x = Group, y = Value, fill = Metric)
+) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(
+    aes(label = sprintf("%.2f", Value)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.3,
+    size = 3
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    x = "Group",
+    y = "Performance (proportion)",
+    fill = "Metric",
+    title = "Sparse SVM performance on held-out test set"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+gg_perf_faceted <- ggplot(
+  perf_long,
+  aes(x = Group, y = Value, fill = Group)
+) +
+  geom_col(width = 0.7) +
+  geom_text(
+    aes(label = sprintf("%.2f", Value)),
+    vjust = -0.3,
+    size = 3
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  facet_wrap(~ Metric, nrow = 1) +
+  labs(
+    x = "Group",
+    y = "Performance (proportion)",
+    title = "Sparse SVM performance by metric and group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+ggsave("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/GA_matched/SVM/term_group/260110_GMdev_term_group_SVM_sparse_model_performance.pdf", plot = gg_perf_faceted, bg = "transparent", width = 10, height = 6)
+
+
+save.image("~/Library/CloudStorage/Box-Box/pppp/GM_development_cohort/Analyses/Manuscript/No_AfterOnly/SVM/PMA_25to32weeks/abx_group_simple/260107_GM_dev_SVM.RData")
+
+
+################ Old code #############
+
+
+# By-class metrics from caret (Sensitivity, Specificity, etc.)
+byc <- as.data.frame(cm$byClass)
+
+# If caret returns a single row (binary), coerce properly
+if (nrow(byc) == 1 && length(classes) == 2) {
+  rownames(byc) <- classes
+}
+
+
+
+# Compute per-class accuracy manually:
+# accuracy_k = (TP + TN) / N for each class k
+acc_vec <- numeric(length(classes))
+
+for (i in seq_along(classes)) {
+  print(i)
+  TP <- tab[i, i]
+  print(paste("TP:", TP))
+  FN <- sum(tab[i, ]) - TP
+  print(paste("FN:", FN))
+  FP <- sum(tab[, i]) - TP
+  TN <- N - TP - FP - FN
+  acc_vec[i] <- (TP + TN) / N
+}
+
+# Combine into a summary data frame
+perf_per_class <- data.frame(
+  Group       = classes,
+  Accuracy    = acc_vec,
+  Sensitivity = byc$Sensitivity,
+  Specificity = byc$Specificity,
+  row.names   = NULL
+)
+```
+
+GM Shift Analysis
+```{r}
+library(ggpubr)
+
+samples_per_infant <- merged_ps_meta %>% group_by(Patient) %>% dplyr::summarise(n_samples = n())
+
+n_single_sample <- sum(samples_per_infant$n_samples == 1)
+
+pt_long_meta <- merged_ps_meta %>% group_by(Patient) %>% filter(n() > 1) %>% ungroup()
+
+long_pt_ps <- merged_ps %>% subset_samples(Sample_ID_R_final %in% pt_long_meta$Sample_ID_R_final)
+ 
+pt_bc_matrix <- phyloseq::distance(long_pt_ps, method="bray")
+pt_bc_matrix <- as.matrix(pt_bc_matrix)
+pt_bc_matrix <- melt(pt_bc_matrix)
+
+colnames(pt_bc_matrix)[1] <- "Sample_ID1"
+colnames(pt_bc_matrix)[2] <- "Sample_ID2"
+colnames(pt_bc_matrix)[3] <- "bray"
+
+# Removing duplicated rows
+pt_bc_matrix_uniq <- pt_bc_matrix[!duplicated(apply(pt_bc_matrix, 1, function(x) paste(sort(x), collapse = ""))),]
+# Removing self comparisons with values of zero
+pt_bc_matrix_uniq <- pt_bc_matrix_uniq[which(pt_bc_matrix_uniq$Sample_ID1 != pt_bc_matrix_uniq$Sample_ID2),] 
+# Subset metadata to columns I want
+pt_long_want <- pt_long_meta %>% select(Sample_ID_R_final, Patient, DOL, abx_group_updated, abx_group_names)
+
+# Merge final distance matrix with metadata
+pt_bc_matrix_uniq <- merge(pt_bc_matrix_uniq, pt_long_want, by.x = "Sample_ID1", by.y = "Sample_ID_R_final")
+pt_bc_matrix_uniq <- merge(pt_bc_matrix_uniq, pt_long_want, by.x = "Sample_ID2", by.y = "Sample_ID_R_final")
+
+### Comparing within and between participant distances 
+# Adding comparison type column 
+pt_bc_matrix_uniq$Comparison[pt_bc_matrix_uniq$Patient.x == pt_bc_matrix_uniq$Patient.y] <- "Within participant"
+pt_bc_matrix_uniq$Comparison[pt_bc_matrix_uniq$Patient.x != pt_bc_matrix_uniq$Patient.y] <- "Between participant"
+
+pt_bc_matrix_uniq$Comparison <- factor(pt_bc_matrix_uniq$Comparison, levels = c("Between participant","Within participant"))
+
+## Create df_sample
+df_sample <- pt_long_meta %>% arrange(Patient, DOL)
+
+## Create df_within and df_between
+df_within = filter(pt_bc_matrix_uniq, Comparison=="Within participant")
+df_between = filter(pt_bc_matrix_uniq, Comparison=="Between participant")
+
+### Plot saturation curve with all sample pairs (not just consecutive)
+## Calculate DOL differences between intra-patient samples
+df_within <- df_within %>% mutate(DOL_diff = abs(DOL.x - DOL.y))
+
+sat_curve_data_all <- df_within %>%
+  group_by(DOL_diff) %>%
+  summarise(mean_BC = mean(bray, na.rm = TRUE),
+            median_BC = median(bray, na.rm = TRUE),
+            .groups = 'drop') %>%
+  arrange(DOL_diff)
+
+sat_curve_all <- ggplot(sat_curve_data_all, aes(x = DOL_diff, y = mean_BC)) +
+  geom_point(size = 2) +
+  geom_line() +
+  geom_smooth(method = "loess", se = TRUE, color = "blue", fill = "lightblue") +
+  labs(x = "Time difference (DOL)",
+       y = "Bray-Curtis Dissimilarity") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.line = element_line(colour = "black"),
+        panel.background = element_blank())
+ggsave("260211_GMdev_pterm_mean_bray_bw_all_within_infant_samples_across_DOL_diff.pdf", plot = sat_curve_all, bg = "transparent", width = 10, height = 6)
+
+
+## Identify GM shifts
+### First identify samples that are consecutive from each infant
+df_within_consecutive = data.frame()
+for (patient in unique(df_sample$Patient)) {
+  # Get all samples for this patient (already sorted by DOL)
+  sample_info <- filter(df_sample, Patient == patient)
+  
+  # Loop through consecutive pairs
+  for (i in 2:nrow(sample_info)) {
+    sample_prev <- sample_info$Sample_ID_R_final[i-1]
+    sample_curr <- sample_info$Sample_ID_R_final[i]
+    # Find this pair in df_within (check both orders)
+    pair_data <- df_within %>%
+      filter((Sample_ID1 == sample_prev & Sample_ID2 == sample_curr) |
+             (Sample_ID2 == sample_prev & Sample_ID1 == sample_curr))
+    
+    if (nrow(pair_data) > 0) {
+      df_within_consecutive <- rbind(df_within_consecutive, pair_data)
+    }
+  }
+}
+### 2069 consecutive pairs of samples found ##
+
+##### Plot bray-curtis dissimilarity by DOL diff for consecutive sample pairs
+# First, calculate mean BC for each DOL_diff
+bc_sat_data <- df_within_consecutive %>%
+  group_by(DOL_diff) %>%
+  summarise(
+    mean_BC = mean(bray, na.rm = TRUE),
+    median_BC = median(bray, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  arrange(DOL_diff)
+
+sat_curve <- ggplot(bc_sat_data, aes(x = DOL_diff, y = mean_BC)) +
+  geom_point(size = 2) +
+  geom_line() +
+  geom_smooth(method = "loess", se = TRUE, color = "blue", fill = "lightblue") +
+  labs(x = "Time difference (DOL)",
+       y = "Bray-Curtis Dissimilarity") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        axis.line = element_line(colour = "black"),
+        panel.background = element_blank())
+ggsave("260211_GMdev_pterm_mean_bray_bw_consecutive_samples_across_DOL_diff.pdf", plot = sat_curve, bg = "transparent", width = 10, height = 6)
+
+#### Calculate DOL difference for between-patient data
+df_between <- df_between %>% mutate(DOL_diff = abs(DOL.x - DOL.y)) %>% select(Sample_ID1, everything())
+## Check distribution of DOL differences
+table(df_within_consecutive$DOL_diff)
+
+############-----------Determine shift thresholds for each DOL difference------------#################
+## Reorder df_within_consecutive just for ease of keeping track of samples and DOL
+df_within_consecutive <- df_within_consecutive %>% select(Sample_ID1, everything())
+
+# Determine the range of DOL differences to analyze
+# Use only DOL_diffs that have sufficient data
+dol_diff_counts <- table(df_within_consecutive$DOL_diff)
+print(dol_diff_counts)
+
+# Choose range (e.g., 0-10 days, or based on your data)
+# Make sure each DOL_diff has enough samples (e.g., >5 pairs)
+DOL_diff_range <- 0:10  # Adjust based on your data
+
+# Initialize results dataframe
+shift_thresholds <- data.frame(
+  DOL_diff = DOL_diff_range,
+  Cutoff = NA
+)
+
+# Calculate intersection point for each DOL difference
+for (i in 1:nrow(shift_thresholds)) {
+  dol_val <- shift_thresholds$DOL_diff[i]
+  
+  # Combine data for DOL_diff = i and i+1 (for smoothing)
+  if (dol_val == max(DOL_diff_range)) {
+    # For the last value, only use that value
+    intra_BC <- df_within_consecutive$bray[
+      df_within_consecutive$DOL_diff == dol_val]
+    inter_BC <- df_between$bray[
+      df_between$DOL_diff == dol_val]
+  } else {
+    intra_BC <- df_within_consecutive$bray[
+      df_within_consecutive$DOL_diff == dol_val | 
+      df_within_consecutive$DOL_diff == dol_val + 1]
+    inter_BC <- df_between$bray[
+      df_between$DOL_diff == dol_val | 
+      df_between$DOL_diff == dol_val + 1]
+  }
+  
+  # Skip if insufficient data
+  if (length(intra_BC) < 5 | length(inter_BC) < 5) {
+    warning(paste("Insufficient data for DOL_diff =", dol_val))
+    next
+  }
+  
+  # Calculate density distributions
+  all_BC <- c(intra_BC, inter_BC)
+  lower.limit <- min(all_BC)
+  upper.limit <- max(all_BC)
+  
+  density_intra <- density(intra_BC, from = lower.limit, to = upper.limit)
+  density_inter <- density(inter_BC, from = lower.limit, to = upper.limit, adjust = 10)
+  
+  # Find intersection point
+  density_diff <- density_intra$y - density_inter$y
+  crossings <- which(diff(density_diff > 0) != 0) + 1
+  
+  if (length(crossings) > 0) {
+    shift_thresholds$Cutoff[i] <- min(density_intra$x[crossings])
+  } else {
+    warning(paste("No intersection found for DOL_diff =", dol_val))
+  }
+}
+
+####### Visualize threshold vs DOL difference
+# Plot cutoff vs DOL difference with regression
+cutoff_plot <- ggplot(shift_thresholds, aes(x = DOL_diff, y = Cutoff)) +
+  geom_point(size = 3) +
+  geom_smooth(method = lm, color = "red", fill = "#69b3a2", se = TRUE) +
+  stat_cor(label.y = max(shift_thresholds$Cutoff, na.rm = TRUE) * 0.95) + 
+  stat_regline_equation(label.y = max(shift_thresholds$Cutoff, na.rm = TRUE) * 0.90) +
+  labs(x = "DOL Difference", y = "Bray-Curtis Cutoff") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+ggsave("shift_cutoff_plot.pdf", cutoff_plot, width = 5, height = 4)
+
+###### Fit regression model to predict thresholds ##########
+# Fit linear model
+cutoff_model <- lm(Cutoff ~ DOL_diff, data = shift_thresholds)
+summary(cutoff_model)
+
+# Extract coefficients
+intercept <- coef(cutoff_model)[1]
+slope <- coef(cutoff_model)[2]
+
+print(paste("Threshold formula: Cutoff =", round(intercept, 4), "+", 
+            round(slope, 4), "* DOL_diff"))
+
+####### Apply thresholds to identify shift events##############
+# Calculate expected threshold for each consecutive pair based on its DOL_diff
+df_within_consecutive$Expected_Cutoff <- intercept + slope * df_within_consecutive$DOL_diff
+
+# Determine if it's a shift event
+df_within_consecutive$Shift <- ifelse(
+  df_within_consecutive$bray >= df_within_consecutive$Expected_Cutoff,
+  "Yes", "No")
+
+# Count shift events
+table(df_within_consecutive$Shift)
+
+# View some shift events
+shift_events <- df_within_consecutive %>% filter(Shift == "Yes")
+print(paste("Total shift events:", nrow(shift_events)))
+head(shift_events)
+
+# Determine which sample is the "later" one (higher DOL)
+df_within_consecutive$Sample_later <- if_else(
+  df_within_consecutive$DOL.x > df_within_consecutive$DOL.y, df_within_consecutive$Sample_ID1, df_within_consecutive$Sample_ID2)
+df_within_consecutive$DOL_later <- pmax(df_within_consecutive$DOL.x, df_within_consecutive$DOL.y)
+
+df_within_consecutive$Sample_earlier <- if_else(
+  df_within_consecutive$DOL.x < df_within_consecutive$DOL.y, df_within_consecutive$Sample_ID1, df_within_consecutive$Sample_ID2)
+df_within_consecutive$DOL_earlier <- pmin(df_within_consecutive$DOL.x, df_within_consecutive$DOL.y)
+
+df_within_consecutive$abx_group_earlier <- if_else(
+  df_within_consecutive$DOL.x < df_within_consecutive$DOL.y, df_within_consecutive$abx_group_names.x, df_within_consecutive$abx_group_names.y)
+df_within_consecutive$abx_group_later <- if_else(
+  df_within_consecutive$DOL.x > df_within_consecutive$DOL.y, df_within_consecutive$abx_group_names.x, df_within_consecutive$abx_group_names.y)
+
+write.csv(df_within_consecutive, "260210_within_infant_consecutive_with_shifts.csv", row.names = F)
+
+### Create a transition label for shifts that occur between abx exposure groups
+df_within_consecutive$abx_group_transition <- paste0(df_within_consecutive$abx_group_earlier, " -> ", df_within_consecutive$abx_group_later)
+
+## Categorize as within-group or between-group change in abx_group
+df_within_consecutive$transition_type <- if_else(
+  df_within_consecutive$abx_group_earlier == df_within_consecutive$abx_group_later, "Within-group", "Between-group")
+
+
+######### Visualize shift events #############
+library(ggridges)
+library(ggalluvial)
+library(ggpubr)
+
+# Filter for shift events only
+shift_events <- df_within_consecutive %>% filter(Shift == "Yes")
+
+# Count total shifts by transition type
+transition_summary <- shift_events %>%
+  group_by(transition_type, abx_group_transition) %>%
+  summarise(
+    n_shifts = n(),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(n_shifts))
+
+# Count within-group shifts
+within_group_shifts <- shift_events %>%
+  filter(transition_type == "Within-group") %>%
+  group_by(abx_group_earlier) %>%
+  summarise(
+    n_shifts = n(),
+    mean_later_DOL = mean(DOL_later, na.rm = TRUE),
+    median_later_DOL = median(DOL_later, na.rm = TRUE),
+    .groups = 'drop')
+
+# Count between-group shifts
+between_group_shifts <- shift_events %>%
+  filter(transition_type == "Between-group") %>%
+  group_by(abx_group_earlier, abx_group_later) %>%
+  summarise(
+    n_shifts = n(),
+    mean_later_DOL = mean(DOL_later, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(n_shifts))
+
+# Calculate total consecutive pairs (shifts + non-shifts) for each transition
+all_pairs_summary <- df_within_consecutive %>%
+  group_by(transition_type, abx_group_transition) %>%
+  summarise(
+    total_pairs = n(),
+    n_shifts = sum(Shift == "Yes"),
+    n_no_shifts = sum(Shift == "No"),
+    shift_proportion = n_shifts / total_pairs,
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(shift_proportion))
+
+## Bar plot of shift counts ##
+all_pairs_summary$abx_group_transition <- factor(all_pairs_summary$abx_group_transition, 
+                                                 levels = c("EAS -> EAS", "EEO -> EEO", "ABN -> ABN", "EEO -> EAS"))
+plot1 <- ggplot(all_pairs_summary, aes(x = abx_group_transition, y = n_shifts, 
+                                        fill = transition_type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n_shifts), vjust = -0.5, size = 3) +
+  scale_fill_manual(values = c("Within-group" = "#3291a4", "Between-group" = "#f28a5f")) +
+  labs(x = "Antibiotic Exposure Group",
+    y = "Number of Shift Events",
+    fill = "Transition Type"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 11),
+    axis.title = element_text(size = 14, face = "bold"),
+    legend.position = "top",
+    legend.text = element_text(size = 14))
+ggsave("260211_GM_shift_counts_by_abx_exposure_group.pdf", plot1, width = 8, height = 6)
+
+# Stacked bar showing shift vs no-shift proportions
+plot2 <- ggplot(all_pairs_summary, aes(x = abx_group_transition, y = shift_proportion, 
+                                        fill = transition_type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(shift_proportion * 100, 1), "%")), 
+            vjust = -0.5, size = 3) +
+  scale_fill_manual(values = c("Within-group" = "#3291a4", "Between-group" = "#f28a5f")) +
+  labs(
+    title = "Proportion of Consecutive Pairs that are Shifts",
+    x = "Antibiotic Exposure Group",
+    y = "Shift Proportion",
+    fill = "Transition Type"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 11),
+    axis.title = element_text(size = 14, face = "bold"),
+    legend.position = "top",
+    legend.text = element_text(size = 14))+
+  ylim(0, max(all_pairs_summary$shift_proportion) * 1.1)
+ggsave("260211_GM_shift_proportions_by_abx_exposure_group.pdf", plot2, width = 8, height = 6)
+
+#### Chi-square test for shift proportions
+## Test if shift proportions differ among within-group transitions
+# Create contingency table
+within_contingency <- df_within_consecutive %>% filter(transition_type == "Within-group") %>%
+  select(abx_group_earlier, Shift) %>% table()
+
+# Chi-square test
+chisq_within <- chisq.test(within_contingency) # X-squared = 7.0556, df = 2, p-value = 0.02937
+
+# Pairwise comparison since the overall chisq test was significant
+pairwise_prop_test_results <- pairwise.prop.test(x = within_contingency[, "Yes"],
+                                       n = rowSums(within_contingency),
+                                       p.adjust.method = "bonferroni") ## Within stable pairs, the EAS group has significantly higher number of shifts than the EEO group (q = 0.034)
+
+################ Test shift rates between all four groups
+df_within_consecutive <- df_within_consecutive %>% mutate(comparison_type = paste0(transition_type,"_",abx_group_later))
+transition_contingency <- df_within_consecutive %>% select(comparison_type, Shift) %>% table()
+
+# Chi-square test
+chisq_bw <- chisq.test(transition_contingency) # X-squared = 9.381, df = 3, p-value = 0.025
+
+# Pairwise comparison since the overall chisq test was significant
+pairwise_results_bw <- pairwise.prop.test(x = transition_contingency[, "Yes"],
+                                       n = rowSums(transition_contingency),
+                                       p.adjust.method = "BH") ## Within stable pairs, the EAS group has significantly higher number of shifts than the EEO group (q = 0.034)
+
+################ Test if between-group transitions have different shift rates than within-group
+transition_contingency2 <- df_within_consecutive %>% select(transition_type, Shift) %>% table()
+
+chisq_transition <- chisq.test(transition_contingency2) # Not significant; X-squared = 1.8215, df = 1, p-value = 0.1771 (Pearson's Chi-squared test with Yates' continuity correction)
+
+################ Test if shift timing differs among abx exposure groups
+kruskal_timing <- kruskal.test(DOL_later ~ abx_group_later, data = shift_events) #Kruskal-Wallis chi-squared = 90.729, df = 2, p-value < 2.2e-16
+
+
+# Post-hoc pairwise comparisons since significant
+library(FSA)
+posthoc_timing <- dunnTest(DOL_later ~ abx_group_later, 
+                             data = shift_events, 
+                             method = "bonferroni")
+
+# Compare timing between within-group and between-group shifts
+wilcox_transition_timing <- wilcox.test(DOL_later ~ transition_type, data = shift_events)
+
+### Check DOL distributions by abx group for all samples in this shift analysis
+# Get all unique samples involved in shift events
+# (both the earlier and later samples from each shift pair)
+samples_in_shifts <- unique(c(shift_events$Sample_earlier, shift_events$Sample_later)) #465 samples
+
+# Filter df_sample to only those samples
+samples_shift_analysis <- df_sample %>%
+  filter(Sample_ID_R_final %in% samples_in_shifts)
+
+table(samples_shift_analysis$abx_group_names)
+
+# Calculate summary statistics for DOL by treatment group
+dol_summary <- samples_shift_analysis %>%
+  group_by(abx_group_names) %>%
+  summarise(
+    n_samples = n(),
+    mean_DOL = mean(DOL, na.rm = TRUE),
+    median_DOL = median(DOL, na.rm = TRUE),
+    sd_DOL = sd(DOL, na.rm = TRUE),
+    min_DOL = min(DOL, na.rm = TRUE),
+    max_DOL = max(DOL, na.rm = TRUE),
+    q25_DOL = quantile(DOL, 0.25, na.rm = TRUE),
+    q75_DOL = quantile(DOL, 0.75, na.rm = TRUE),
+    .groups = 'drop')
+
+# Ridge plot showing DOL distribution for each treatment group
+plot_ridge <- ggplot(samples_shift_analysis, aes(x = DOL, y = abx_group_names, fill = abx_group_names)) +
+  geom_density_ridges(alpha = 0.6, scale = 0.9, quantile_lines = TRUE, quantiles = 2) +
+  scale_fill_manual(values = custom_colors_names) +
+  labs(
+    title = "Distribution of Sample Collection DOL by Antibiotic Exposure Group",
+    subtitle = "Samples included in shift event analysis",
+    x = "Day of Life (DOL)",
+    y = "Treatment Group"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "none")
+ggsave("260211_DOL_distribution_of_GM_shift_samples_by_group_ridge.pdf", plot_ridge, width = 8, height = 6)
+
+# Violin plot with statistical comparisons
+plot_violin <- ggplot(samples_shift_analysis, aes(x = abx_group_names, y = DOL, fill = abx_group_names)) +
+  geom_violin(alpha = 0.6, trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  scale_fill_manual(values = custom_colors_names) +
+  stat_compare_means(method = "kruskal.test", label.y = max(samples_shift_analysis$DOL) * 1.05) +
+  stat_compare_means(comparisons = list(c("EAS", "EEO"), 
+                                        c("EAS", "ABN"), 
+                                        c("EEO", "ABN")),
+                     method = "wilcox.test",
+                     label = "p.signif") +
+  labs(
+    title = "DOL distribution of samples involved in shift events",
+    x = "Antibiotic Exposure Group",
+    y = "Day of Life (DOL)"
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16, face = "bold"),
+    axis.title.y = element_text(size = 16, face = "bold"),
+    plot.title = element_text(size = 14),
+    legend.position = "none")
+ggsave("260211_shift_samples_DOL_distribution_by_group_violin.pdf", plot_violin, width = 8, height = 6)
+
+
+# Ridge plot showing WHEN shifts occur for each abx exposure group
+plot4 <- ggplot(shift_events, aes(x = DOL_later, y = abx_group_later, 
+                                   fill = abx_group_later)) +
+  geom_density_ridges(alpha = 0.6, scale = 0.9, quantile_lines = TRUE, quantiles = 2) +
+  scale_fill_manual(values = custom_colors_names) +
+  labs(
+    title = "Timing of Shift Events by Antibiotic Exposure Group (After Shift)",
+    x = "DOL Later (When Shift Occurred)",
+    y = "Antibiotic Exposure Group (After Shift)"
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16, face = "bold"),
+    axis.title.y = element_text(size = 16, face = "bold"),
+    plot.title = element_text(size = 14),
+    legend.position = "none"
+  ) +
+  xlim(0, max(shift_events$DOL_later, na.rm = TRUE))
+ggsave("260211_shift_timing_by_abx_exposure_group.pdf", plot4, width = 8, height = 6)
+
+# Show timing separately for within-group vs between-group shifts
+plot5 <- ggplot(shift_events, aes(x = DOL_later, y = abx_group_later, 
+                                   fill = transition_type)) +
+  geom_density_ridges(alpha = 0.6, scale = 0.9, quantile_lines = TRUE, quantiles = 2) +
+  scale_fill_manual(values = c("Within-group" = "#3291a4", "Between-group" = "#f28a5f")) +
+  facet_wrap(~transition_type, ncol = 1) +
+  labs(
+    title = "Shift Timing: Within-Group vs Between-Group Transitions",
+    x = "DOL Later (When Shift Occurred)",
+    y = "Treatment Group (After Shift)",
+    fill = "Transition Type"
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    legend.position = "top",
+    legend.text = element_text(size = 14))
+ggsave("260211_shift_timing_by_transition_type_and_abx_exposure_group.pdf", plot5, width = 8, height = 8)
+
+## Compare shift timings between groups in plot5
+shift_events <- shift_events %>% mutate(Comparison_group = paste0(transition_type, "_", abx_group_later))
+table(shift_events$Comparison_group)
+shift_events$Comparison_group <- factor(shift_events$Comparison_group)
+
+# Pairwise wilcoxon tests
+shift_time_wilcox <- pairwise.wilcox.test(x = shift_events$DOL_later,
+                                          g = shift_events$Comparison_group,
+                                          p.adjust.method = "BH", paired = FALSE)
+
+## Pairwise permutation tests
+library(coin)
+
+# 1. Permutation test (best for many ties)
+# Overall test
+overall_perm <- independence_test(
+  DOL_later ~ factor(Comparison_group),
+  data = shift_events,
+  distribution = approximate(nresample = 10000)
+)
+
+# Pairwise with correction
+groups <- unique(shift_events$Comparison_group)
+pairwise_results <- data.frame()
+
+for (i in 1:(length(groups)-1)) {
+  for (j in (i+1):length(groups)) {
+    subset_data <- shift_events %>%
+      filter(Comparison_group %in% c(groups[i], groups[j]))
+    
+    perm_test <- independence_test(
+      DOL_later ~ factor(Comparison_group),
+      data = subset_data,
+      distribution = approximate(nresample = 10000)
+    )
+    
+    pairwise_results <- rbind(pairwise_results, data.frame(
+      Comparison = paste(groups[i], "vs", groups[j]),
+      p_value = pvalue(perm_test)
+    ))
+  }
+}
+
+pairwise_results$p_adjusted <- p.adjust(pairwise_results$p_value, "bonferroni")
+pairwise_results$significant <- pairwise_results$p_adjusted < 0.05
+
+
+# 2. Report summary statistics
+summary_stats <- shift_events %>%
+  group_by(Comparison_group) %>%
+  summarise(
+    n = n(),
+    median = median(DOL_later),
+    mean = mean(DOL_later),
+    sd = sd(DOL_later),
+    IQR = IQR(DOL_later)
+  )
+
+
+# Box plot with permutation results
+custom_colors_shift <- c("Between-group_EAS" = "#f28a5f", "Within-group_ABN" = "#8E949F", "Within-group_EAS" = "#AAC9ED",
+                         "Within-group_EEO" = "#44637D")
+shift_events$Comparison_group <- factor(shift_events$Comparison_group, levels = c("Within-group_ABN", "Within-group_EEO", "Within-group_EAS", "Between-group_EAS"))
+plot_timing_comparison <- ggplot(shift_events, aes(x = Comparison_group, y = DOL_later, fill = Comparison_group)) +
+  geom_violin(alpha = 0.6, trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  scale_fill_manual(values = custom_colors_shift) +
+  labs(
+    title = "Shift timing comparisons",
+    x = "Antibiotic Exposure Group",
+    y = "DOL Later (When Shift Occurred)"
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16, face = "bold"),
+    axis.title.y = element_text(size = 16, face = "bold"),
+    plot.title = element_text(size = 14), 
+    legend.position = "none")
+ggsave("260212_shift_timing_distribution_by_group_violin.pdf", plot_timing_comparison, width = 10, height = 6)
+
+
+##################### Visualize density distributions for a specific DOL difference ###########
+# Example: Visualize densities for DOL_diff = 3
+dol_example <- 10
+
+intra_BC <- df_within_consecutive$bray[
+  df_within_consecutive$DOL_diff == dol_example]
+inter_BC <- df_between$bray[
+  df_between$DOL_diff == dol_example]
+
+plot_data <- data.frame(
+  BC = c(intra_BC, inter_BC),
+  Type = c(rep("Intra-patient", length(intra_BC)), 
+           rep("Inter-patient", length(inter_BC)))
+)
+
+threshold_val <- shift_thresholds$Cutoff[shift_thresholds$DOL_diff == dol_example]
+
+DOL10_density_plot <- ggplot(plot_data, aes(x = BC, fill = Type)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = threshold_val, linetype = "dashed", color = "#AD3C36", size = 1) +
+  annotate("text", x = threshold_val, y = Inf, 
+           label = paste("Threshold =", round(threshold_val, 3)), 
+           hjust = -0.1, vjust = 2) +
+  scale_fill_manual(values = c("Intra-patient" = "#AA6B77", "Inter-patient" = "#EACACF")) +
+  labs(title = paste("Density Distributions for DOL_diff =", dol_example),
+       x = "Bray-Curtis Dissimilarity",
+       y = "Density") +
+  theme_classic() + 
+  theme(
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16, face = "bold"),
+    axis.title.y = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14)) 
+ggsave("260211_GMdev_pterm_DOL_diff10_threshold_plot.pdf", plot = DOL10_density_plot, bg = "transparent", width = 10, height = 6)
+
+
+```
+
