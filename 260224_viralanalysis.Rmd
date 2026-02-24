@@ -1,0 +1,1213 @@
+---
+title: "260224_P4_phagepipeline"
+author: "Sri Paruthiyil"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+library(ggplot2)
+library(tidyr)
+library(RColorBrewer)
+library(scales)
+library(plyr)
+library(reshape2)
+library(dplyr)
+library(pheatmap)
+library(tidyverse)
+library(nlme)
+library(tibble)
+library(data.table)
+library(stringr)
+library(readxl)
+library(Maaslin2)
+library(lme4)
+library(lmerTest)
+
+
+vcontact2 <- read.csv ("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/genome_by_genome_overview.csv")
+
+vcontact2_clustered <- subset (vcontact2, VC.Status != "Singleton")
+
+vcontact2_clustered <- subset (vcontact2_clustered, VC.Status != "Outlier")
+
+#Going to build up the key which will be used to assign families
+
+vcontact2_clustered$VC <- ifelse(vcontact2_clustered$VC == '', vcontact2_clustered$VC.Status, vcontact2_clustered$VC)
+
+#vcontact2_assigned$VC <- ifelse(is.na(vcontact2_assigned$VC), vcontact2_assigned$VC.Status, vcontact2_assigned$VC)
+
+vcontact2_assigned <- subset (vcontact2_clustered, Family != "Unassigned")
+
+#Samples randomly from VC to get the taxonony of each VC
+randomeachcluster <- vcontact2_assigned %>% group_by(VC) %>% sample_n(1)
+
+randomeachcluster_filtered <- randomeachcluster[c(6,10)]
+
+colnames(randomeachcluster_filtered)[1] ="vcontact_family"
+
+merged_df <- merge(vcontact2, randomeachcluster_filtered, by = "VC", all.x = TRUE)
+
+samples <- dplyr::filter(merged_df, grepl("@Chunk",Genome))
+
+cenote <- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250114_cenote_summary.csv")
+
+cenote$Genus <- sapply(strsplit(cenote$ORGANISM_NAME, " "), `[`, 1)
+
+#Merge cenote and filtered vcontact
+# cenote$catcenotename<- NA
+# cenote$catcenotename<- paste(cenote$ORIGINAL_NAME, "@", cenote$Viral_Chunk)
+# cenote$catcenotename<-str_remove_all(cenote$catcenotename," ")
+# cenote$catcenotename<-str_replace_all(cenote$catcenotename,"\\.", "_")
+
+mergev2 <- merge(samples, cenote, by.x = "Genome", by.y = "ORIGINAL_NAME")
+
+merge_clean <- mergev2[c(1,2,11,23,24,25,26,27,29,30,32,37)]
+
+
+#Here I want to merge with all the checkV outputs so that I can do some filtering
+
+checkv <- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/quality_summary.csv")
+
+mergev3 <- merge (merge_clean, checkv, by.x = "Genome", by.y = "contig_id")
+
+
+
+#Getting rid of non phages both bacteria and plasmid
+mergev3 <- subset (mergev3, contig_length <= 200000)
+#combined <- subset (combined, VC != "VC_379_0")
+mergev3 <- subset (mergev3, completeness >= 10)
+#mergev3 <- subset (mergev3, contig_length >= 14000) this is commented because the length cut off was not used in the end to select phages for pharokka and read mapping. The logic is that it might just be that we didn't capture the full length of the phage. and there are not that many that made it through with low length in the end, so it's not a huge issue
+
+#Writing out this so that I can use it as an input for pharokka
+#write.csv(mergev3, file = "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250204_pharokkainputphages.csv", row.names = T)
+
+
+pharokka<-read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250211_concatenated_CDS_pharokka.csv")
+
+required_categories <- c("tail", "head and packaging", "connector", "integrase", "excisionase", "replication", "terminase")
+
+# Identify contigs that contain at least one of the required categories
+valid_contigs <- pharokka$contig[pharokka$category %in% required_categories]
+
+# Filter the dataframe to keep only contigs that have at least one of the required categories
+filtered_pharokka <- pharokka[pharokka$contig %in% valid_contigs, ]
+
+#Filtering based on finalized genome list
+finalbacteriallist<-read_excel("~/Library/CloudStorage/Box-Box/pppp/data/PretermPlasmidPhageProject_polypolish_circular_mash_checkm_HQgenomes.xlsx")
+
+finalbacteriallist$Sample <- gsub("-", "_", finalbacteriallist$Sample)
+finalbacteriallist$Sample <- gsub("\\.", "_", finalbacteriallist$Sample)
+
+mergev3$viralhost <- sub("__.*", "", mergev3$Genome)
+filtered_pharokka$viralhost <- sub("__.*", "", filtered_pharokka$contig)
+
+
+mergev4 <- mergev3[(tolower(mergev3$viralhost) %in% tolower(finalbacteriallist$Sample)), ]
+
+filtered_pharokka2 <- filtered_pharokka[(tolower(filtered_pharokka$viralhost) %in% tolower(finalbacteriallist$Sample)), ]
+
+
+
+
+filteredpharokkaphages<-unique(filtered_pharokka2$contig)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#These are the phages to input into Pharokka
+
+
+#write.csv(filteredpharokkaphages, file = "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250604_stringentpharokkaphages.csv", row.names = F)
+
+
+
+
+#Permutation for read mapping
+#Basically we just want to permute phages/plasmids to stools from their own infant host. So 1144_01_E__1@Chunk_210 only gets read mapped against patient 1144.01 metagenomes
+#The goal here is reduce compute and to look at MGE abundances over the whole time course we have on an infant, and then we see if abundance changes as a function of recent antibiotic exposure
+
+allp4samples <- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/Abxflanking/250408_GM_Dev_Abx_administ_history (1).csv")
+
+
+
+phages<- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250604_stringentpharokkaphages.csv", header = T)
+
+
+plasmids <-read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250611_plasmidmapping.csv")
+
+wholegenomes<-read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250709_wholegenomebowties.csv")
+
+#Manual removing 349.01-EC because it has this  hyphen, and its genome is bad, so I'd rather filter it out now to not fuck up my permute, even though it will be filtered later
+
+wholegenomes <- subset(wholegenomes, Contig != "349.01_EC_polished")
+
+#data cleaning
+phages_split<- phages %>%
+  separate(Contig, into = c("first", "second", "third", "fourth", "fifth", "sixth"), sep = "_", remove = FALSE)
+
+phages_split$Patient <- paste(phages_split$first, phages_split$second, sep = ".")
+
+
+phages_split <- phages_split[ , !(names(phages_split) %in% c("first", "second", "third", "fourth", "fifth", "sixth"))]
+
+plasmids <- plasmids[ , !(names(plasmids) %in% c("X", "X.1", "X.2", "X.3", "X.4", "X.5", "X.6"))]
+
+
+wholegenome_split<- wholegenomes %>%
+  separate(Contig, into = c("first", "second", "third"), sep = "_", remove = FALSE)
+
+wholegenome_split$Patient <- paste(wholegenome_split$first)
+
+
+wholegenome_split <- wholegenome_split[ , !(names(wholegenome_split) %in% c("first", "second", "third"))]
+
+allp4samples$Patient<- as.character(allp4samples$Patient)
+
+
+
+
+#Permute
+plasmid_combos <- plasmids %>%
+  inner_join(allp4samples, by = "Patient") %>%
+  select(Contig, Sample_ID, Patient)
+
+phage_combos <- phages_split %>%
+  inner_join(allp4samples, by = "Patient") %>%
+  select(Contig, Sample_ID, Patient)
+
+wholegenome_combos <- wholegenome_split %>%
+  inner_join(allp4samples, by = "Patient") %>%
+  select(Contig, Sample_ID, Patient)
+
+#Remove any patient with less than one sample
+phage_combos_filter <- phage_combos %>%
+  group_by(Patient) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+plasmid_combos_filter <- plasmid_combos %>%
+  group_by(Patient) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+wholegenome_combos_filter <- wholegenome_combos %>%
+  group_by(Patient) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+#merge in paths
+
+lts<- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250117_P4_samples_LTS_presence_v2.csv")
+
+#Fix a path name that is no longer accurate
+lts <- lts %>%
+  mutate(LTS_Path = case_when(
+    LTS_Path == "/lts/gdlab/projects/preterm_plasmidome/gm_development/abx-naive_preterm" ~ "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/abx-naive_preterm",
+    LTS_Path == "/lts/gdlab/projects/preterm_plasmidome/gm_development/gasparrini_cohort/preterm_infants" ~ "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/gasparrini_cohort/preterm_infants",
+    TRUE ~ LTS_Path
+  ))
+
+phages_lts <- merge(phage_combos_filter, lts, by = "Sample_ID")
+
+plasmid_lts <- merge(plasmid_combos_filter, lts, by = "Sample_ID")
+
+genomes_lts <- merge(wholegenome_combos_filter, lts, by = "Sample_ID")
+#Remove things for which we don't have paths
+
+phages_lts_filter <- phages_lts %>%
+  filter(!is.na(LTS_Path))
+
+plasmid_lts_filter <- plasmid_lts %>%
+  filter(!is.na(LTS_Path))
+
+genomes_lts_filter <- genomes_lts %>%
+  filter(!is.na(LTS_Path))
+
+#Remove any patient with less than one sample after we got rid of samples without a path
+phages_lts_filter <- phages_lts_filter %>%
+  group_by(Patient.x) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  group_by(Patient.x) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+genomes_lts_filter <- genomes_lts_filter %>%
+  group_by(Patient.x) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+
+## Fix this one location that never had its correct paths
+phages_lts_filter <- phages_lts_filter %>%
+  mutate(LTS_Path = gsub("/lts/gdlab/users/current/jryou/Preterm_Plasmidome", "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads", LTS_Path))
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(LTS_Path = gsub("/lts/gdlab/users/current/jryou/Preterm_Plasmidome", "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads", LTS_Path))
+
+
+genomes_lts_filter <- genomes_lts_filter %>%
+  mutate(LTS_Path = gsub("/lts/gdlab/users/current/jryou/Preterm_Plasmidome", "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads", LTS_Path))
+
+#Fixing a dir where the sample name has a underscore not a period
+phages_lts_filter <- phages_lts_filter %>%
+  mutate(Sample_ID = if_else(LTS_Path == "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads",
+                        gsub("\\.", "_", Sample_ID),
+                        Sample_ID))
+
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(Sample_ID = if_else(LTS_Path == "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads",
+                        gsub("\\.", "_", Sample_ID),
+                        Sample_ID))
+
+
+genomes_lts_filter <- genomes_lts_filter %>%
+  mutate(Sample_ID = if_else(LTS_Path == "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads",
+                        gsub("\\.", "_", Sample_ID),
+                        Sample_ID))
+
+
+
+#Form the full paths
+
+key <- c("/lts/gdlab/projects/nec_project2/merged" = "_R1_CLEAN.fastq.gz", 
+         "/lts/gdlab/projects/nec_project2/MollyDrew" = "_R1_CLEAN.fastq.gz", 
+         "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/abx-naive_preterm" = "_FW_clean.fastq.gz", ## This one is the mistake i think, the preterm_plasmidome folder in projects is now PretermPlasmidPhageProject
+         #"/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/gasparrini_cohort/preterm_infants" = "_R1_CLEAN.fastq.gz",  ## As is this...
+         "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/gasparrini_cohort/preterm_infants" = "_1.fastq.gz", 
+         "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads" = "_FW_clean.fastq.gz", 
+         "/lts/gdlab/users/current/kailun/Phageome/NEC/NEC_cleanreads_time" = "_R1_CLEAN.fastq.gz"
+         )
+
+phages_lts_filter$extension <- NA
+plasmid_lts_filter$extension <- NA
+genomes_lts_filter$extension<- NA
+
+phages_lts_filter <- phages_lts_filter %>%
+  mutate(extension = key[LTS_Path])
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(extension = key[LTS_Path])
+genomes_lts_filter <- genomes_lts_filter %>%
+  mutate(extension = key[LTS_Path])
+
+key2 <- c("_R1_CLEAN.fastq.gz" = "_R2_CLEAN.fastq.gz", "_1.fastq.gz" = "_2.fastq.gz", "_FW_clean.fastq.gz" = "_RV_clean.fastq.gz")
+
+phages_lts_filter$extension2 <- NA
+plasmid_lts_filter$extension2 <- NA
+genomes_lts_filter$extension2 <- NA
+
+phages_lts_filter <- phages_lts_filter %>%
+  mutate(extension2 = key2[extension])
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(extension2 = key2[extension])
+genomes_lts_filter <- genomes_lts_filter %>%
+  mutate(extension2 = key2[extension])
+
+phages_lts_filter$fullpath1 <- str_replace_all(paste(phages_lts_filter$LTS_Path, "/", phages_lts_filter$Sample_ID, phages_lts_filter$extension), " ", "")
+phages_lts_filter$fullpath2 <- str_replace_all(paste(phages_lts_filter$LTS_Path, "/", phages_lts_filter$Sample_ID, phages_lts_filter$extension2), " ", "")
+
+plasmid_lts_filter$fullpath1<- str_replace_all(paste(plasmid_lts_filter$LTS_Path, "/", plasmid_lts_filter$Sample_ID, plasmid_lts_filter$extension), " ", "")
+plasmid_lts_filter$fullpath2<- str_replace_all(paste(plasmid_lts_filter$LTS_Path, "/", plasmid_lts_filter$Sample_ID, plasmid_lts_filter$extension2), " ", "")
+
+genomes_lts_filter$fullpath1<- str_replace_all(paste(genomes_lts_filter$LTS_Path, "/", genomes_lts_filter$Sample_ID, genomes_lts_filter$extension), " ", "")
+genomes_lts_filter$fullpath2<- str_replace_all(paste(genomes_lts_filter$LTS_Path, "/", genomes_lts_filter$Sample_ID, genomes_lts_filter$extension2), " ", "")
+
+
+allmetagenomepaths <- c(phages_lts_filter$fullpath1, plasmid_lts_filter$fullpath1)
+mappingmetagenomes<- unique(allmetagenomepaths)
+
+mappingplasmids<-unique(plasmid_lts_filter$Contig)
+#writeLines(mappingplasmids, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_plasmidmapping.txt")
+
+mappingphages<-unique(phages_lts_filter$Contig)
+#writeLines(mappingphages, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_phagesmapping.txt")
+
+mappinggenomeassemblies<-unique(genomes_lts_filter$Contig)
+#writeLines(mappinggenomeassemblies, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250709_genomeassembliesmapping.txt")
+
+# writeLines(phages_lts_filter$Contig, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_phagesmapping_phagepermute.txt")
+# writeLines(phages_lts_filter$fullpath1, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_phagesmapping_metagenomepermute1.txt")
+# writeLines(phages_lts_filter$fullpath2, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_phagesmapping_metagenomepermute2.txt")
+# writeLines(phages_lts_filter$Sample_ID, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_phagesmapping_sampleIDpermute.txt")
+# 
+# writeLines(plasmid_lts_filter$Contig, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_plasmidmapping_plasmidpermute.txt")
+# writeLines(plasmid_lts_filter$fullpath1, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_plasmidmapping_metagenomepermute1.txt")
+# writeLines(plasmid_lts_filter$fullpath2, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_plasmidmapping_metagenomepermute2.txt")
+# writeLines(plasmid_lts_filter$Sample_ID, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250613_plasmidmapping_sampleIDpermute.txt")
+
+
+
+#writeLines(genomes_lts_filter$Contig, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250709_genomeassemblymapping_genomeassemblypermute.txt")
+#writeLines(genomes_lts_filter$fullpath1, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250709_genomeassemblymapping_metagenomepermute1.txt")
+#writeLines(genomes_lts_filter$fullpath2, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250709_genomeassemblymapping_metagenomepermute2.txt")
+#writeLines(genomes_lts_filter$Sample_ID, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250709_genomeassemblymapping_sampleIDpermute.txt")
+
+
+
+
+
+
+
+
+
+######
+##########################################
+#Creating the permutations for the missed plasmids
+##########################################
+######
+allp4samples <- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/Abxflanking/250408_GM_Dev_Abx_administ_history (1).csv")
+
+
+
+plasmids_missed <-read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260201_plasmidmapping_MISSEDPLASMIDS_V1_SP.csv")
+
+
+#Manual removing 349.01-EC because it has this  hyphen, and its genome is bad, so I'd rather filter it out now to not fuck up my permute, even though it will be filtered later
+
+
+#data cleaning
+
+plasmids_missed <- plasmids_missed[ , !(names(plasmids_missed) %in% c("X", "X.1", "X.2", "X.3", "X.4", "X.5", "X.6"))]
+
+plasmids_missed$Patient <- as.character(plasmids_missed$Patient)
+
+allp4samples$Patient<- as.character(allp4samples$Patient)
+
+
+
+
+#Permute
+plasmid_combos <- plasmids_missed %>%
+  inner_join(allp4samples, by = "Patient") %>%
+  select(Contig, Sample_ID, Patient)
+
+
+#Remove any patient with less than one sample
+
+
+plasmid_combos_filter <- plasmid_combos %>%
+  group_by(Patient) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+
+
+#merge in paths
+
+lts<- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250117_P4_samples_LTS_presence_v2.csv")
+
+#Fix a path name that is no longer accurate
+lts <- lts %>%
+  mutate(LTS_Path = case_when(
+    LTS_Path == "/lts/gdlab/projects/preterm_plasmidome/gm_development/abx-naive_preterm" ~ "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/abx-naive_preterm",
+    LTS_Path == "/lts/gdlab/projects/preterm_plasmidome/gm_development/gasparrini_cohort/preterm_infants" ~ "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/gasparrini_cohort/preterm_infants",
+    TRUE ~ LTS_Path
+  ))
+
+
+
+plasmid_lts <- merge(plasmid_combos_filter, lts, by = "Sample_ID")
+
+
+#Remove things for which we don't have paths
+
+
+plasmid_lts_filter <- plasmid_lts %>%
+  filter(!is.na(LTS_Path))
+
+
+
+#Remove any patient with less than one sample after we got rid of samples without a path
+
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  group_by(Patient.x) %>%
+  filter(n_distinct(Sample_ID) > 1) %>%
+  ungroup()
+
+
+
+
+## Fix this one location that never had its correct paths
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(LTS_Path = gsub("/lts/gdlab/users/current/jryou/Preterm_Plasmidome", "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads", LTS_Path))
+
+
+
+#Fixing a dir where the sample name has a underscore not a period
+
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(Sample_ID = if_else(LTS_Path == "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads",
+                        gsub("\\.", "_", Sample_ID),
+                        Sample_ID))
+
+
+
+
+
+#Form the full paths
+
+key <- c("/lts/gdlab/projects/nec_project2/merged" = "_R1_CLEAN.fastq.gz", 
+         "/lts/gdlab/projects/nec_project2/MollyDrew" = "_R1_CLEAN.fastq.gz", 
+         "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/abx-naive_preterm" = "_FW_clean.fastq.gz", ## This one is the mistake i think, the preterm_plasmidome folder in projects is now PretermPlasmidPhageProject
+         #"/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/gasparrini_cohort/preterm_infants" = "_R1_CLEAN.fastq.gz",  ## As is this...
+         "/lts/gdlab/projects/PretermPlasmidPhageProject/gm_development/gasparrini_cohort/preterm_infants" = "_1.fastq.gz", 
+         "/lts/gdlab/users/current/jryou/Preterm_Plasmidome/trimmed_metagenomic_short_reads" = "_FW_clean.fastq.gz", 
+         "/lts/gdlab/users/current/kailun/Phageome/NEC/NEC_cleanreads_time" = "_R1_CLEAN.fastq.gz"
+         )
+
+
+plasmid_lts_filter$extension <- NA
+
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(extension = key[LTS_Path])
+
+
+key2 <- c("_R1_CLEAN.fastq.gz" = "_R2_CLEAN.fastq.gz", "_1.fastq.gz" = "_2.fastq.gz", "_FW_clean.fastq.gz" = "_RV_clean.fastq.gz")
+
+
+plasmid_lts_filter$extension2 <- NA
+
+
+plasmid_lts_filter <- plasmid_lts_filter %>%
+  mutate(extension2 = key2[extension])
+
+
+
+plasmid_lts_filter$fullpath1<- str_replace_all(paste(plasmid_lts_filter$LTS_Path, "/", plasmid_lts_filter$Sample_ID, plasmid_lts_filter$extension), " ", "")
+plasmid_lts_filter$fullpath2<- str_replace_all(paste(plasmid_lts_filter$LTS_Path, "/", plasmid_lts_filter$Sample_ID, plasmid_lts_filter$extension2), " ", "")
+
+
+allmetagenomepaths <- c(plasmid_lts_filter$fullpath1)
+mappingmetagenomes<- unique(allmetagenomepaths)
+
+mappingplasmids<-unique(plasmid_lts_filter$Contig)
+#writeLines(mappingplasmids, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260201_plasmidmapping_missed.txt")
+# 
+# # 
+# writeLines(plasmid_lts_filter$Contig, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260201_plasmidmapping_plasmidpermute_missed.txt")
+# writeLines(plasmid_lts_filter$fullpath1, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260201_plasmidmapping_metagenomepermute1_missed.txt")
+# writeLines(plasmid_lts_filter$fullpath2, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260201_plasmidmapping_metagenomepermute2_missed.txt")
+# writeLines(plasmid_lts_filter$Sample_ID, "~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260201_plasmidmapping_sampleIDpermute_missed.txt")
+
+
+
+######
+##########################################
+#Missed plasmids permutations done (Yes, it was painful)
+##########################################
+######
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#Bowtie analysis
+
+
+#Removing patients that don't meet our abx exposure requirements (after only infants)
+
+meta <- read.csv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/Abxflanking/250408_GM_Dev_Abx_administ_history (1).csv")
+
+pts = data.frame(read_excel('/Users/gdlab/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/260202_P4_GM_dev_meta_updated_groupings_v2 (1).xlsx'), stringsAsFactors = F)
+#Manually removing "After Only"
+meta <- meta %>% filter(Patient != "184.01")
+meta <- meta %>% filter(Patient != "2031.01")
+# 
+# meta <- meta %>% filter(Patient != "278.01")
+# 
+# meta <- meta %>% filter(Patient != "2038.01")
+# 
+# meta <- meta %>% filter(Patient != "2018.01")
+# 
+# meta <- meta %>% filter(Patient != "2007.01")
+# 
+# meta <- meta %>% filter(Patient != "1027.01")
+
+
+coverM<- read_tsv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/covermsummary_250617.tsv")
+coverM_missed<- read_tsv("/Users/gdlab/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/covermsummary_missedplasmids260201.tsv")
+
+coverM <- rbind(coverM, coverM_missed)
+
+#colnames(coverM) <- c("Sample",	"MappingGenome",	"%RelativeAbundance",	"Mean",	"TrimmedMean",	"Covered Bases")
+
+#coverM <- coverM[, 1:(ncol(coverM) - 5)]
+
+coverM <- coverM[coverM$MappingGenome != "unmapped", ]
+
+coverM <- coverM[coverM$MappingGenome != "Genome", ]
+
+coverM$MappingGenome <- sub("_plasmids$", "", coverM$MappingGenome)
+
+coverM$Sample_ID <- mapply(function(full, pat) sub(pat, "", full, fixed = TRUE),
+                       coverM$Sample, coverM$MappingGenome)
+
+coverM$Sample_ID <- sub("_$", "", coverM$Sample_ID)
+
+names(coverM)[names(coverM) == "Sample"] <- "Sample_MappingGenome"
+
+mergecoverM<- merge(coverM, meta, by = "Sample_ID")
+
+
+
+#coverM_plasmid <- coverM[grepl("plasmids", coverM$MappingGenome), ]
+
+#coverM_phage <- coverM[grepl("Chunk", coverM$MappingGenome), ]
+
+
+
+#coverM$metagenome <- sub("^(([^_]*_)?[^_]*)_.*", "\\1", coverM$Sample)
+
+#coverM$Individual<-sub("_.*", "", coverM$Sample)
+
+#coverMmerge<- merge (coverM, thanertmeta, by = "metagenome")
+
+subset_coverMmerge <- mergecoverM %>%
+  group_by(Sample_ID, MappingGenome) %>% # Group by metagenome
+  filter(any(`%RelativeAbundance` != "NaN")) %>% # Keep groups where Relative Abundance (%) is not NA
+  ungroup()
+
+subset_coverMmerge$`%RelativeAbundance`<- as.numeric(subset_coverMmerge$`%RelativeAbundance`)
+
+subset_coverMmerge$TrimmedMean<- as.numeric(subset_coverMmerge$TrimmedMean)
+
+
+
+
+# P1<-subset_coverMmerge %>%
+#   ggplot(aes(x = MappingGenome, y = "%RelativeAbundance", color = str_detect(shiftstatus, "pre"))) +
+#   geom_line() +  # Use line plot to show relative abundance trends
+#   geom_point() +  # Add points to the line plot for clarity
+#   facet_wrap(~ Individual) +  # Create a facet for each individual
+#   labs(
+#     title = "Relative Abundance by MappingGenome and Antibiotic Treatment",
+#     x = "Mapping Genome",
+#     y = "Relative Abundance (%)"
+#   ) +
+#   theme_minimal() +
+#   scale_color_manual(values = c("TRUE" = "blue", "FALSE" = "red")) +  # Color by presence of 'before' or 'after'
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# 
+# P2<-subset_coverMmerge %>%
+#   group_by(Individual) %>%
+#   filter(any(str_detect(shiftstatus, "pre")) & any(str_detect(shiftstatus, "post"))) %>%
+#   ungroup() %>%
+#   ggplot(aes(x = MappingGenome, y = "%RelativeAbundance", color = str_detect(shiftstatus, "Before"))) +
+#   geom_line() +  # Use line plot to show relative abundance trends
+#   geom_point() +  # Add points to the line plot for clarity
+#   facet_wrap(~ Individual) +  # Create a facet for each individual
+#   labs(
+#     title = "Relative Abundance by MappingGenome and Antibiotic Treatment",
+#     x = "Mapping Genome",
+#     y = "Relative Abundance (%)"
+#   ) +
+#   theme_minimal() +
+#   scale_color_manual(values = c("TRUE" = "blue", "FALSE" = "red")) +  # Color by presence of 'before' or 'after'
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+# 
+# subset_coverMmerge %>%
+#   group_by(Individual) %>%
+#   filter(any(str_detect(shiftstatus, "pre")) & any(str_detect(shiftstatus, "post"))) %>%
+#   ungroup() %>%
+#   group_split(Individual) %>%
+#   purrr::walk(function(sub_df) {
+#     # Create a plot for each individual
+#     plot <- ggplot(sub_df, aes(x = MappingGenome, y = "%RelativeAbundance", color = str_detect(shiftstatus, "pre"), group = shiftstatus)) +
+#       geom_line() +  # Use line plot to show relative abundance trends
+#       geom_point() +  # Add points to the line plot for clarity
+#       labs(
+#         title = paste("Relative Abundance for", unique(sub_df$Individual)),
+#         x = "Mapping Genome",
+#         y = "Relative Abundance (%)"
+#       ) +
+#       theme_minimal() +
+#       scale_color_manual(values = c("TRUE" = "blue", "FALSE" = "red")) +  # Color by presence of 'before' or 'after'
+#       theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+#     
+#     # Display the plot for each individual
+#     print(plot)
+#   })
+# 
+# 
+# 
+# subset_coverMmerge %>%
+#   group_by(Individual) %>%
+#   filter(any(str_detect(Antibiotic_Treatment, "Before")) & any(str_detect(Antibiotic_Treatment, "After"))) %>%
+#   ungroup() %>%
+#   group_split(Individual) %>%
+#   purrr::walk2(seq_along(.), function(sub_df, idx) {
+#     # Create a plot for each individual
+#     plot <- ggplot(sub_df, aes(x = MappingGenome, y = "%RelativeAbundance", color = str_detect(Antibiotic_Treatment, "Before"), group = Antibiotic_Treatment)) +
+#       geom_line() +  # Use line plot to show relative abundance trends
+#       geom_point() +  # Add points to the line plot for clarity
+#       labs(
+#         title = paste("Relative Abundance for", unique(sub_df$Individual)),
+#         x = "Mapping Genome",
+#         y = "Relative Abundance (%)"
+#       ) +
+#       theme_minimal() +
+#       scale_color_manual(values = c("TRUE" = "blue", "FALSE" = "red")) +
+#       theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+#     
+#     # Dynamically assign each plot to a unique variable (Plot1, Plot2, etc.)
+#     assign(paste0("Plot", idx), plot, envir = .GlobalEnv)
+#   })
+# 
+# #I want to write a loop here that will take each mapping genome (virus) and then make a ratio of before and after relative abundance for each individual, Then it makes a plot where it takes each mapping genome's ratio values and plots them where mapping genome is the y axis and the x axis is the ratio value and each individual point represents an individual
+# 
+# 
+# df <- subset_coverMmerge %>%
+#   mutate(
+#     TreatmentGroup = case_when(
+#       grepl("pre", shiftstatus, ignore.case = TRUE) ~ "pre",
+#       grepl("post", shiftstatus, ignore.case = TRUE) ~ "post",
+#       TRUE ~ NA_character_ # If neither "before" nor "after" is found, assign NA
+#     )
+#   ) %>%
+#   filter(!is.na(TreatmentGroup))  # Remove any rows where no match was found
+
+metagenomereads <- read.table("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/250623phageandplasmidmetagenomereadcount.txt", header = FALSE, stringsAsFactors = FALSE)
+
+#odd_rows <- metagenomereads[seq(1, nrow(metagenomereads), 2), , drop = FALSE]
+#even_rows <- metagenomereads[seq(2, nrow(metagenomereads), 2), , drop = FALSE]
+
+#metagenomeread_df <- data.frame(odd_rows, even_rows)
+colnames(metagenomereads) <- c("Sample", "Reads") 
+
+metagenomereads<-unique(metagenomereads)
+
+#metagenomeread_df <- metagenomeread_df[!grepl("_RV_clean", metagenomeread_df[[1]]), ]
+
+#metagenomeread_df$Sample <- sub(".*/", "", metagenomeread_df$Sample)
+
+# Step 2: Remove extensions
+metagenomereads$Sample <- gsub("_R1_CLEAN.fastq.gz", "", metagenomereads$Sample)
+metagenomereads$Sample <- gsub("_1.fastq.gz", "", metagenomereads$Sample)
+metagenomereads$Sample <- gsub("_FW_clean.fastq.gz", "", metagenomereads$Sample)
+
+
+
+coverM_reads_merge<-merge(subset_coverMmerge,metagenomereads, by.x = "Sample_ID", by.y = "Sample")
+
+
+
+#df_normalizedtometagenomereads$Reads<- as.numeric(df_normalizedtometagenomereads$Reads)
+
+coverM_reads_merge$normalizedreads <- coverM_reads_merge$TrimmedMean/coverM_reads_merge$Reads
+
+
+coverM_plasmid <- coverM_reads_merge[grepl("round", coverM_reads_merge$MappingGenome), ]
+
+coverM_phage <- coverM_reads_merge[grepl("Chunk", coverM_reads_merge$MappingGenome), ]
+
+
+P3_phage<-ggplot(coverM_phage, aes(x = normalizedreads, y = MappingGenome, color = Cohort))  +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Trimmed reads/metagenome reads", x = "Trimmed reads/metagenome reads", y = "Mapping Phage") +
+  scale_x_log10()
+
+
+P3_plasmid<-ggplot(coverM_plasmid, aes(x = normalizedreads, y = MappingGenome, color = Cohort))  +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Trimmed reads/metagenome reads", x = "Trimmed reads/metagenome reads", y = "Mapping Phage") +
+  scale_x_log10()
+
+P3_phage_DOL <- ggplot(coverM_phage %>% filter(DOL >= 6 & DOL <= 14), 
+                   aes(x = normalizedreads, y = MappingGenome, color = Cohort)) +
+  facet_wrap(~ DOL) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Trimmed reads/metagenome reads", 
+       x = "Trimmed reads/metagenome reads", 
+       y = "Mapping Phage") +
+  scale_x_log10()
+
+
+P3_plasmid_DOL <- ggplot(coverM_plasmid %>% filter(DOL >= 6 & DOL <= 14), 
+                   aes(x = normalizedreads, y = MappingGenome, color = Cohort)) +
+  facet_wrap(~ DOL) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Trimmed reads/metagenome reads", 
+       x = "Trimmed reads/metagenome reads", 
+       y = "Mapping Phage") +
+  scale_x_log10()
+
+
+
+
+P3_phage_mappinggenome <- ggplot(coverM_phage %>%
+  filter(DOL >= 1 & DOL <= 59) %>%
+  group_by(MappingGenome) %>%
+  filter(n() >= 5) %>%
+  ungroup(), 
+                   aes(x = `%RelativeAbundance`, y = DOL, color = Cohort)) +
+  facet_wrap(~ MappingGenome) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Trimmed reads/metagenome reads", 
+       x = "Trimmed reads/metagenome reads", 
+       y = "DOL") +
+  scale_x_log10()
+
+
+P3_plasmid_mappinggenome <- ggplot(coverM_plasmid %>%
+  filter(DOL >= 1 & DOL <= 59) %>%
+  group_by(MappingGenome) %>%
+  filter(n() >= 5) %>%
+  ungroup(), 
+                   aes(x = `%RelativeAbundance`, y = DOL, color = Cohort)) +
+  facet_wrap(~ MappingGenome) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Trimmed reads/metagenome reads", 
+       x = "Trimmed reads/metagenome reads", 
+       y = "DOL") +
+  scale_x_log10()
+
+#An issue arises, it looks like clearly plasmid and phage abundance is just following their host abundance
+#So, rather than normalize to metagenome reads, I will normalized to reads mapping to their host genomes
+#Then the ratio of ((MGE reads mapped/Metagenome total reads)/(chromosome reads mapped/Metagenome total reads)) is just MGE reads mapped/chromosome reads mapped after cancelling out
+#So, here I am going to start permuting chromosome of interest to the baby that it is from
+
+
+coverM_genomeassembly<- read_tsv("~/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/covermsummary_genome250710.tsv")
+
+
+
+coverM_genomeassembly <- coverM_genomeassembly[coverM_genomeassembly$MappingGenome != "unmapped", ]
+
+coverM_genomeassembly <- coverM_genomeassembly[coverM_genomeassembly$MappingGenome != "Genome", ]
+
+coverM_genomeassembly$MappingGenome <- sub("_polished$", "", coverM_genomeassembly$MappingGenome)
+
+coverM_genomeassembly$Sample_ID <- mapply(function(full, pat) sub(pat, "", full, fixed = TRUE),
+                       coverM_genomeassembly$Sample, coverM_genomeassembly$MappingGenome)
+
+#coverM_genomeassembly$Sample_ID <- sub("_$", "", coverM_genomeassembly$Sample_ID)
+
+coverM_genomeassembly$Sample_ID <- sub("__polished_coverm_output.tsv", "", coverM_genomeassembly$Sample_ID)
+
+
+names(coverM_genomeassembly)[names(coverM_genomeassembly) == "Sample"] <- "Sample_MappingGenome"
+
+
+
+mergecoverM_genomeassembly<- merge(coverM_genomeassembly, meta, by = "Sample_ID")
+
+
+
+#coverM_genomeassembly_plasmid <- coverM_genomeassembly[grepl("plasmids", coverM_genomeassembly$MappingGenome), ]
+
+#coverM_genomeassembly_phage <- coverM_genomeassembly[grepl("Chunk", coverM_genomeassembly$MappingGenome), ]
+
+
+
+#coverM_genomeassembly$metagenome <- sub("^(([^_]*_)?[^_]*)_.*", "\\1", coverM_genomeassembly$Sample)
+
+#coverM_genomeassembly$Individual<-sub("_.*", "", coverM_genomeassembly$Sample)
+
+#coverM_genomeassemblymerge<- merge (coverM_genomeassembly, thanertmeta, by = "metagenome")
+
+subset_coverM_genomeassemblymerge <- mergecoverM_genomeassembly %>%
+  group_by(Sample_ID, MappingGenome) %>% # Group by metagenome
+  filter(any(`%RelativeAbundance` != "NaN")) %>% # Keep groups where Relative Abundance (%) is not NA
+  ungroup()
+
+subset_coverM_genomeassemblymerge$`%RelativeAbundance`<- as.numeric(subset_coverM_genomeassemblymerge$`%RelativeAbundance`)
+
+subset_coverM_genomeassemblymerge$TrimmedMean<- as.numeric(subset_coverM_genomeassemblymerge$TrimmedMean)
+
+subset_coverM_genomeassemblymerge <- subset_coverM_genomeassemblymerge[!duplicated(subset_coverM_genomeassemblymerge), ]
+
+
+#Realizing something here (Jul10 25) I think the trimmed mean is inappropriate, and coverM calculation of count may be better. We want the raw number of reads mapping rather than the average number of reads for a given base. Or relative abundance
+
+#Here I want to merge in the relative abundance material of a given metagenome to the phage and plasmid material
+
+coverM_phage$bacterialhost <- str_extract(coverM_phage$MappingGenome, "^.+(?=__)")
+
+coverM_plasmid$bacterialhost <- sub("^(?:[^_]+_){4}", "", coverM_plasmid$MappingGenome)
+
+coverM_phage$bacterialhost<- sub("_", ".", coverM_phage$bacterialhost)
+
+
+# Perform the merge
+coverM_phage_hostrelativeabundance <- merge(
+  coverM_phage,
+  subset_coverM_genomeassemblymerge[, c("Sample_ID", "MappingGenome", "%RelativeAbundance")],
+  by.x = c("Sample_ID", "bacterialhost"),
+  by.y = c("Sample_ID", "MappingGenome"),
+  all.x = TRUE
+)
+
+# Rename the column
+names(coverM_phage_hostrelativeabundance)[names(coverM_phage_hostrelativeabundance) == "%RelativeAbundance.y"] <- "%RelativeAbundance_bacterialhost"
+
+
+
+
+
+coverM_plasmid_hostrelativeabundance <- merge(
+  coverM_plasmid,
+  subset_coverM_genomeassemblymerge[, c("Sample_ID", "MappingGenome", "%RelativeAbundance")],
+  by.x = c("Sample_ID", "bacterialhost"),
+  by.y = c("Sample_ID", "MappingGenome"),
+  all.x = TRUE
+)
+
+# Rename the column
+names(coverM_plasmid_hostrelativeabundance)[names(coverM_plasmid_hostrelativeabundance) == "%RelativeAbundance.y"] <- "%RelativeAbundance_bacterialhost"
+
+
+coverM_phage_hostrelativeabundance$MGEnormalizedtohost <- coverM_phage_hostrelativeabundance$`%RelativeAbundance.x`/coverM_phage_hostrelativeabundance$`%RelativeAbundance_bacterialhost`
+
+coverM_plasmid_hostrelativeabundance$MGEnormalizedtohost<- coverM_plasmid_hostrelativeabundance$`%RelativeAbundance.x`/coverM_plasmid_hostrelativeabundance$`%RelativeAbundance_bacterialhost`
+
+#There are some NAs here that I need to figure out (SOLVED turns out reads just didn't map to the genome in those samples weirdly)
+
+P3_phage_mappinggenome_normalizedtohost <- ggplot(coverM_phage_hostrelativeabundance %>%
+  filter(DOL >= 1 & DOL <= 59) %>%
+  group_by(MappingGenome) %>%
+  filter(n() >= 5) %>%
+  ungroup(), 
+                   aes(y = MGEnormalizedtohost, x = DOL, color = Cohort)) +
+  facet_wrap(~ MappingGenome) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "phage abundance over time", 
+       x = "DOL", 
+       y = "MGE/bacterialhost relative abundance") +
+  scale_x_log10()
+
+
+P3_plasmid_mappinggenome_normalizedtohost <- ggplot(coverM_plasmid_hostrelativeabundance %>%
+  filter(DOL >= 1 & DOL <= 59) %>%
+  group_by(MappingGenome) %>%
+  filter(n() >= 5) %>%
+  ungroup(), 
+                   aes(y = MGEnormalizedtohost, x = DOL, color = Cohort)) +
+  facet_wrap(~ MappingGenome) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "plasmid abundance over time", 
+       x = "DOL", 
+       y = "MGE/bacterialhost relative abundance") +
+  scale_x_log10()
+
+
+coverM_phage_hostrelativeabundance$DOL <- as.factor(coverM_phage_hostrelativeabundance$DOL)
+
+coverM_plasmid_hostrelativeabundance$DOL <- as.factor(coverM_plasmid_hostrelativeabundance$DOL)
+
+
+# Get unique MappingGenome values
+genomes_phage <- unique(coverM_phage_hostrelativeabundance$MappingGenome)
+
+results_phage <- data.frame(MappingGenome = character(), p_value = numeric(), slope = numeric(), stringsAsFactors = FALSE)
+
+for (genome in genomes_phage) {
+  subset_df <- coverM_phage_hostrelativeabundance[coverM_phage_hostrelativeabundance$MappingGenome == genome, ]
+  
+  # Ensure DOL is numeric
+  subset_df$DOL_num <- as.numeric(as.character(subset_df$DOL))
+  
+  # Remove rows with NA in key columns
+  subset_df <- subset_df[!is.na(subset_df$DOL_num) & !is.na(subset_df$MGEnormalizedtohost), ]
+  
+  # Skip if too few unique time points or constant signal
+  if(length(unique(subset_df$DOL_num)) < 2) next
+  if(is.na(var(subset_df$MGEnormalizedtohost, na.rm = TRUE)) || 
+     var(subset_df$MGEnormalizedtohost, na.rm = TRUE) == 0) next
+  
+  fit <- tryCatch({
+    lm_fit <- lm(MGEnormalizedtohost ~ DOL_num, data = subset_df)
+    summary_fit <- summary(lm_fit)
+    p_val <- coef(summary_fit)[2, 4]  # p-value for slope
+    slope <- coef(summary_fit)[2, 1]  # slope estimate
+    c(p_val, slope)
+  }, error = function(e) c(NA, NA))
+  
+  if (!any(is.na(fit))) {
+    results_phage <- rbind(results_phage, data.frame(MappingGenome = genome, p_value = fit[1], slope = fit[2]))
+  }
+}
+
+results_phage$padj <- p.adjust(results_phage$p_value, method = "fdr")
+
+
+
+genomes_plasmid <- unique(coverM_plasmid_hostrelativeabundance$MappingGenome)
+
+results_plasmid <- data.frame(MappingGenome = character(), p_value = numeric(), slope = numeric(), stringsAsFactors = FALSE)
+
+for (genome in genomes_plasmid) {
+  subset_df <- coverM_plasmid_hostrelativeabundance[coverM_plasmid_hostrelativeabundance$MappingGenome == genome, ]
+  
+  # Ensure DOL is numeric
+  subset_df$DOL_num <- as.numeric(as.character(subset_df$DOL))
+  
+  # Remove rows with NA in key columns
+  subset_df <- subset_df[!is.na(subset_df$DOL_num) & !is.na(subset_df$MGEnormalizedtohost), ]
+  
+  # Skip if too few unique time points or constant signal
+  if(length(unique(subset_df$DOL_num)) < 2) next
+  if(is.na(var(subset_df$MGEnormalizedtohost, na.rm = TRUE)) || 
+     var(subset_df$MGEnormalizedtohost, na.rm = TRUE) == 0) next
+  
+  fit <- tryCatch({
+    lm_fit <- lm(MGEnormalizedtohost ~ DOL_num, data = subset_df)
+    summary_fit <- summary(lm_fit)
+    p_val <- coef(summary_fit)[2, 4]  # p-value for slope
+    slope <- coef(summary_fit)[2, 1]  # slope estimate
+    c(p_val, slope)
+  }, error = function(e) c(NA, NA))
+  
+  if (!any(is.na(fit))) {
+    results_plasmid <- rbind(results_plasmid, data.frame(MappingGenome = genome, p_value = fit[1], slope = fit[2]))
+  }
+}
+
+results_plasmid$padj <- p.adjust(results_plasmid$p_value, method = "fdr")
+
+
+# Get significant MappingGenome values
+sig_genomes_phage <- results_phage %>%
+  filter(padj < 0.05) %>%
+  pull(MappingGenome) %>%
+  unique()
+
+# Make plot with only significant MappingGenomes
+P3_phage_mappinggenome_normalizedtohost <- ggplot(
+  coverM_phage_hostrelativeabundance %>%
+    filter(MappingGenome %in% sig_genomes_phage) %>%
+    mutate(DOL = as.numeric(as.character(DOL))) %>%   # convert factor → numeric
+    filter(DOL >= 1 & DOL <= 59) %>%
+    group_by(MappingGenome) %>%
+    filter(n() >= 5) %>%
+    ungroup(),
+  aes(y = MGEnormalizedtohost, x = DOL)
+) +
+  facet_wrap(~ MappingGenome, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(
+    title = "Phage abundance over time",
+    x = "DOL",
+    y = "MGE/bacterialhost relative abundance"
+  ) 
+
+
+sig_genomes_plasmid <- results_plasmid %>%
+  filter(padj < 0.05) %>%
+  pull(MappingGenome) %>%
+  unique()
+
+# Make plot with only significant MappingGenomes
+P3_plasmid_mappinggenome_normalizedtohost <- ggplot(
+  coverM_plasmid_hostrelativeabundance %>%
+    filter(MappingGenome %in% sig_genomes_plasmid) %>%
+    mutate(DOL = as.numeric(as.character(DOL))) %>%   # convert factor → numeric
+    filter(DOL >= 1 & DOL <= 59) %>%
+    group_by(MappingGenome) %>%
+    filter(n() >= 5) %>%
+    ungroup(),
+  aes(y = MGEnormalizedtohost, x = DOL)
+) +
+  facet_wrap(~ MappingGenome, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(
+    title = "Plasmid abundance over time",
+    x = "DOL",
+    y = "MGE/bacterialhost relative abundance"
+  ) 
+
+
+
+pharokka_sigovertime <- pharokka %>%
+  filter(contig %in% sig_genomes_phage)
+
+
+
+
+plot_file <- file.path('/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/', paste0(Sys.Date(), "P3_plasmid_mappinggenome_normalizedtohost_V2.pdf"))
+ggsave(filename = plot_file, plot = P3_plasmid_mappinggenome_normalizedtohost, width = 18, height = 10)
+
+plot_file <- file.path('/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/', paste0(Sys.Date(), "P3_phage_mappinggenome_normalizedtohost_V2.pdf"))
+ggsave(filename = plot_file, plot = P3_phage_mappinggenome_normalizedtohost, width = 18, height = 10)
+
+
+
+#write_lines((unique(coverM_phage_hostrelativeabundance$MappingGenome)), "/Users/gdlab/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/VIPtree/251003_succesfullymappedphages.txt" )
+
+#write_lines((unique(coverM_phage_hostrelativeabundance$MappingGenome)), "/Users/gdlab/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/VIPtree/260201_succesfullymappedphages.txt" )
+
+write_lines((unique(coverM_phage_hostrelativeabundance$MappingGenome)), "/Users/gdlab/Library/CloudStorage/Box-Box/DantasLabSriParuthiyil/DantasLab/Phage/plasmidome/250113_P4phagepipelinefinalizing/VIPtree/260202_succesfullymappedphages_V2.txt" )
+
+
+#merging pharokka data on succesfully mapped phages, as well as taxonomy data
+
+pharokka_succesfullymapped<- pharokka %>%
+  filter(contig %in% unique(coverM_phage_hostrelativeabundance$MappingGenome))
+
+non_matching <- setdiff(unique(coverM_phage_hostrelativeabundance$MappingGenome),
+                        pharokka$contig)
+
+taxonomy_succesfullymapped<- merge_clean %>%
+  filter(Genome %in% unique(coverM_phage_hostrelativeabundance$MappingGenome))
+
+
+non_matching2 <- setdiff(unique(coverM_phage_hostrelativeabundance$MappingGenome),
+                        merge_clean$Genome)
+
+write_csv(pharokka_succesfullymapped, file = '/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/260202_succesfullymappedpharokka_V2.csv' )
+
+
+#Realizing that I introduced the minimum size into this analysis AFTER running pharokka, so the tree has phages that may be considered short. I think this is actually fine, given that it is not that many. And that it might just be that we don't pick up the whole phage sequence bioinformatically
+
+
+#Plots on gene content
+
+
+category_summary <- pharokka_succesfullymapped %>%
+  group_by(category) %>%
+  summarise(total_genes = n(), .groups = "drop") %>%
+  arrange(desc(total_genes)) %>%
+  mutate(legend_label = paste0(category, " (N=", total_genes, ")"))
+
+
+
+# Pie chart: all gene categories
+p1 <- ggplot(category_summary, aes(x = "", y = total_genes, fill = legend_label)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  labs(title = "Functional gene categories (all genes)", fill = "Category") +
+  theme_void(base_size = 14) +
+  theme(legend.position = "right")
+
+
+
+plot_file <- file.path('/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/', paste0(Sys.Date(), "phagegenecategories_V2.pdf"))
+ggsave(filename = plot_file, plot = p1, width = 18, height = 10)
+
+
+
+
+## === 2. Subset to AMR genes ===
+amr_genes <- pharokka_succesfullymapped %>%
+  filter(!is.na(AMR_Gene_Family) & AMR_Gene_Family != "None")
+
+amr_summary <- amr_genes %>%
+  group_by(Drug_Class) %>%   # or AMR_Gene_Family if you prefer finer detail
+  summarise(total_genes = n(), .groups = "drop") %>%
+  mutate(label = paste0(Drug_Class, "\nN=", total_genes))
+
+
+write_csv(amr_summary, file = '/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/260201phagegenecategories_V2.csv' )
+
+
+#Taxonomy plots, by Vcontact and Cenote
+
+vcontact_summary <- taxonomy_succesfullymapped %>%
+  group_by(vcontact_family) %>%
+  summarise(total_genomes = n(), .groups = "drop") %>%
+  arrange(desc(total_genomes)) %>%
+  mutate(legend_label = paste0(vcontact_family, " (N=", total_genomes, ")"))
+
+p2 <- ggplot(vcontact_summary, aes(x = "", y = total_genomes, fill = legend_label)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  labs(title = "Distribution of vContact families", fill = "vContact family") +
+  theme_void(base_size = 14) +
+  theme(legend.position = "right")
+
+plot_file <- file.path('/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/', paste0(Sys.Date(), "phagetaxonomy_V2.pdf"))
+ggsave(filename = plot_file, plot = p2, width = 18, height = 10)
+
+
+## === 2. Pie chart: first word of ORGANISM_NAME ===
+organism_summary <- taxonomy_succesfullymapped %>%
+  mutate(organism_first_word = sub(" .*", "", ORGANISM_NAME)) %>%  # extract first word
+  group_by(organism_first_word) %>%
+  summarise(total_genomes = n(), .groups = "drop") %>%
+  arrange(desc(total_genomes)) %>%
+  mutate(legend_label = paste0(organism_first_word, " (N=", total_genomes, ")"))
+
+p3 <- ggplot(organism_summary, aes(x = "", y = total_genomes, fill = legend_label)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  labs(title = "Distribution of Cenote organism calls", fill = "Organism") +
+  theme_void(base_size = 14) +
+  theme(legend.position = "right")
+
+
+plot_file <- file.path('/Users/gdlab/Library/CloudStorage/Box-Box/pppp/figures/', paste0(Sys.Date(), "phagetaxonomy_cenote_V2.pdf"))
+ggsave(filename = plot_file, plot = p3, width = 18, height = 10)
+
+
+
+#write_csv(coverM_plasmid_hostrelativeabundance, file = "~/Downloads/260201_plasmidrelativeabundance_afteronlyremoved_v2.csv" )
+#write_csv(coverM_phage_hostrelativeabundance, file = "~/Downloads/260201_phagerelativeabundance_afteronlyremoved_v2.csv" )
+
+#write_csv(coverM_plasmid_hostrelativeabundance, file = "~/Downloads/260202_plasmidrelativeabundance_afteronlyremoved_v2.csv" )
+#write_csv(coverM_phage_hostrelativeabundance, file = "~/Downloads/260202_phagerelativeabundance_afteronlyremoved_v2.csv" )
+
+write_csv(coverM_plasmid_hostrelativeabundance, file = "~/Downloads/260202_plasmidrelativeabundance_afteronlyremoved_v3.csv" )
+write_csv(coverM_phage_hostrelativeabundance, file = "~/Downloads/260202_phagerelativeabundance_afteronlyremoved_v3.csv" )
+
+
+
+
+####################################################################################################################################################################################################################################################################################################################END OF P4 ANALYSIS################################################################################################################################################################################################
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
