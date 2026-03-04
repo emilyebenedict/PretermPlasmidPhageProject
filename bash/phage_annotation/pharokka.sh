@@ -19,7 +19,7 @@
 eval $( spack load --sh /buvzc6u ) # miniconda3@4.10.3
 CONDA_BASE=$(conda info --base)
 source $CONDA_BASE/etc/profile.d/conda.sh
-conda activate /home/ai.z/.conda/envs/pharroka_1
+conda activate /home/ai.z/.conda/envs/pharroka_1 # version 1.7.5
 
 basedir="/scratch/gdlab/p.sri/250113_P4Pipeline/250113_CT3"
 indir="/scratch/gdlab/p.sri/250113_P4Pipeline/250113_CT3/combinedviruses/splitviruses"
