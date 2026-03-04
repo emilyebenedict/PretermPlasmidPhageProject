@@ -55,6 +55,8 @@ Available data is found in the "R" directory as supplementary tables.
 * foreach v1.5.2
 * permute v0.9.10
 * MaAslin2 v1.20.0
+* ggh4x v0.3.1
+* tidytext v0.4.3
   
 * tidyverse v2.0.0
 * reshape2 v1.4.4
