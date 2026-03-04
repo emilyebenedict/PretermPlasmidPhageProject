@@ -37,10 +37,26 @@ Available data is found in the "R" directory as supplementary tables.
 * R v4.4.2 and v4.5.0
 * RStudio v2024.12.1+563
 * readxl v1.4.3
-* dplyr v1.1.4
+* dplyr v1.2.0
+* tibble v3.3.1
+* stringr v1.6.0
+* flextable v0.9.11
+* officer v0.7.3
+* tableone v0.13.2
+* rlang v1.1.7
+* lme4 v1.1-35.5 and 1.1.38
+* emmeans 2.0.1
+* rstatix v0.7.3
+* ggplot2 4.0.2
+* ggpubr v0.6.3
+* vegan v2.7.2
+* phyloseq v1.50.0
+* doParallel v1.0.17
+* foreach v1.5.2
+* permute v0.9.10
+  
 * tidyverse v2.0.0
 * reshape2 v1.4.4
-* ggplot2 3.5.2
 * NatParksPalettes v0.2.0
 * RColorBrewer v1.1-3
 * phytools 2.3-0
@@ -49,26 +65,19 @@ Available data is found in the "R" directory as supplementary tables.
 * tidytree 0.4.6
 * ggnewscale 0.5.0
 * lubridate v1.9.3
-* kableExtra v1.4.0
-* ggpubr v0.6.0
 * qgraph v1.9.8
 * scales v1.3.0
 * plyr v1.8.9
 * nlme 3.1-166
-* tibble v3.2.1
 * data.table v1.16.2
-* stringr v1.5.1
 * MaAslin2 v1.12.0
-* lme4 v1.1-35.5
 * lmerTest v3.1-3
-* vegan v2.6-8
 * ape v5.7.1
 * microViz v0.12.0
 * ggside v0.3.1
 * patchwork 1.2
 * ComplexHeatmap v2.14.0
 * readr v2.1.5
-* rstatix v0.7.2
 * cowplot v1.1.2
 * Boruta v8.0.0
 * caret v6.0-94
@@ -76,21 +85,12 @@ Available data is found in the "R" directory as supplementary tables.
 * corpcor v1.6.10
 * corrplot v0.95
 * Hmisc v5.2-2
-* ANCOMBC v2_4.0
-* MTXModel 1.2.4
-* forcats 1.0.0
 * microbiome v
 * broom v1.0.7
 * MuMIn v
-* emmeans 2.0.1
 * lattice 0.22-6
 * xtable v1.8-4
 * parallel v4.4.0
-* anytime v
-* flextable v0.9.7
-* officer v
-* tableone v
-* webshot2 v
 * randomForest v4.7-1.2
 * KEGGREST 1.44.1
 
