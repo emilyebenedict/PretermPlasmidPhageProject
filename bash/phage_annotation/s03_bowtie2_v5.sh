@@ -18,7 +18,7 @@
 #SBATCH --output=slurm/bowtie2/x_bowtie2_%A_%a.out
 #SBATCH --error=slurm/bowtie2/y_bowtie2_%A_%a.out
 
-eval $( spack load --sh bowtie2 )
+eval $( spack load --sh bowtie2@2.4.2 )
 #load samtools/1.14
 eval $( spack load --sh /6p5wlkk )
 
