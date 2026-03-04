@@ -20,7 +20,7 @@
 #SBATCH --output=slurm_out/bwa/z_bwa_%a.out
 #SBATCH --error=slurm_out/bwa/z_bwa_%a.out
 
-eval $( spack load --sh bwa )
+eval $( spack load --sh bwa@0.7.17 )
 
 basedir="$PWD"
 indir="${basedir}/d05_QC/tmp_out"
