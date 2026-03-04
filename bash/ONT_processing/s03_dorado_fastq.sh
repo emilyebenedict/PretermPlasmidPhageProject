@@ -18,7 +18,7 @@
 #SBATCH --mail-type=END
 #SBATCH --mail-user=ebenedict@wustl.edu
 
-eval $( spack load --sh samtools )
+eval $( spack load --sh samtools@1.14 )
 
 basedir="$PWD"
 indir="${basedir}/d01_dorado/demux_files"
