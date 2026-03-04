@@ -19,7 +19,7 @@
 #SBATCH --mail-user=ebenedict@wustl.edu
 #SBATCH --mail-type=END
 
-eval $( spack load --sh py-flye )
+eval $( spack load --sh py-flye@2.9 )
 
 basedir="$PWD"
 indir="${basedir}/d02_filtlong"
