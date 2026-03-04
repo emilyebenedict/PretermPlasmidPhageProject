@@ -17,7 +17,7 @@
 #SBATCH --mem=42G
 #SBATCH --output=slurm_out/checkm/x_checkm_%a.out
 
-eval $( spack load --sh py-checkm-genome )
+eval $( spack load --sh py-checkm-genome@1.2.1 )
 
 basedir="$PWD"
 indir="${basedir}/d06_polypolish"
