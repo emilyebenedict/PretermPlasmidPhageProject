@@ -58,10 +58,10 @@ Available data is found in the "R" directory as supplementary tables.
 * ggh4x v0.3.1
 * tidytext v0.4.3
 * randomForest v4.7.1.2
-  
+* NatParksPalettes v0.2.0
+* EVERY PACKAGE ABOVE THIS LINE IS FINAL (JIAN)
 * tidyverse v2.0.0
 * reshape2 v1.4.4
-* NatParksPalettes v0.2.0
 * RColorBrewer v1.1-3
 * phytools 2.3-0
 * ggtree 3.12.0
