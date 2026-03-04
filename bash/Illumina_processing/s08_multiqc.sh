@@ -14,7 +14,7 @@
 #SBATCH --mail-type=END
 #SBATCH --mail-user=ebenedict@wustl.edu
 
-eval $( spack load --sh py-multiqc )
+eval $( spack load --sh py-multiqc@1.13 )
 
 basedir="$PWD"
 indir="${basedir}/d03_read_qc_round2/subsampled"
