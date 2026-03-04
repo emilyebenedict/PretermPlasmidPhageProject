@@ -13,7 +13,7 @@
 #SBATCH --output=slurm_out/trim/x_trim_%a_%A.out
 #SBATCH --error=slurm_out/trim/y_trim_%a_%A.err
 
-eval $( spack load --sh trimmomatic )
+eval $( spack load --sh trimmomatic@0.39 )
 
 basedir="$PWD"
 indir="/lts/gdlab/raw_data/seq5/"
