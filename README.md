@@ -57,6 +57,7 @@ Available data is found in the "R" directory as supplementary tables.
 * MaAslin2 v1.20.0
 * ggh4x v0.3.1
 * tidytext v0.4.3
+* randomForest v4.7.1.2
   
 * tidyverse v2.0.0
 * reshape2 v1.4.4
@@ -93,6 +94,5 @@ Available data is found in the "R" directory as supplementary tables.
 * lattice 0.22-6
 * xtable v1.8-4
 * parallel v4.4.0
-* randomForest v4.7-1.2
 * KEGGREST 1.44.1
 
