@@ -21,8 +21,8 @@
 #SBATCH --error=slurm_out/bwa/z_bwa_align-2_%a.out
 
 # load bwa and samtools
-eval $( spack load --sh bwa ) 
-eval $( spack load --sh /6p5wlkk )
+eval $( spack load --sh bwa@0.7.17 ) 
+eval $( spack load --sh samtools@1.14 )
 
 basedir="$PWD"
 reads_in="${basedir}/d03_filt-out"
