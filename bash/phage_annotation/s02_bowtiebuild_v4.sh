@@ -17,7 +17,7 @@
 #SBATCH --output=slurm/bowtie/x_bowtieBuild_%A_%a.out
 #SBATCH --error=slurm/bowtie/y_bowtieBuild_%A_%a.out
 
-eval $( spack load --sh bowtie2 )
+eval $( spack load --sh bowtie2@2.4.2 )
 
 
 basedir="/scratch/gdlab/p.sri/250414_HVP_induction/"
