@@ -14,8 +14,8 @@
 #SBATCH --output=slurm_out/shortbred_quantify/x_shrtbrd-2_%a.out
 #SBATCH --error=slurm_out/shortbred_quantify/y_shrtbrd-2_%a.out
 
-#eval $( spack load --sh shortbred@0.9.4 )
-eval $( spack load --sh /buvzc6u ) #load miniconda3
+#eval $( spack load --sh shortbred@0.9.3 )
+eval $( spack load --sh miniconda3@4.10.3 ) #load miniconda3
 CONDA_BASE=$(conda info --base)
 source $CONDA_BASE/etc/profile.d/conda.sh
 conda activate /ref/gdlab/software/envs/shortbred
