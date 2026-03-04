@@ -22,6 +22,6 @@ dir="${basedir}/d01_dorado"
 name="p4_round3_dorado"
 indir="${dir}/calling_output"
 
-eval $( spack load --sh samtools )
+eval $( spack load --sh samtools@1.14 )
 
 samtools merge ${dir}/${name}.bam ${indir}/*.bam
