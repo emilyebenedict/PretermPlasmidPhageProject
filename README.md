@@ -54,6 +54,7 @@ Available data is found in the "R" directory as supplementary tables.
 * doParallel v1.0.17
 * foreach v1.5.2
 * permute v0.9.10
+* MaAslin2 v1.20.0
   
 * tidyverse v2.0.0
 * reshape2 v1.4.4
@@ -70,7 +71,6 @@ Available data is found in the "R" directory as supplementary tables.
 * plyr v1.8.9
 * nlme 3.1-166
 * data.table v1.16.2
-* MaAslin2 v1.12.0
 * lmerTest v3.1-3
 * ape v5.7.1
 * microViz v0.12.0
