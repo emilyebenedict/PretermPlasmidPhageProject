@@ -17,7 +17,7 @@
 #SBATCH --mail-type=END
 #SBATCH --mail-user=ebenedict@wustl.edu
 
-eval $( spack load --sh dorado@0.4.1 )
+eval $( spack load --sh dorado@0.5.0 )
 
 basedir="$PWD"
 indir="${basedir}/d01_dorado"
