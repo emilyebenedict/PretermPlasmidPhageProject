@@ -1,9 +1,9 @@
-## PretermPlasmidPhageProject
+# PretermPlasmidPhageProject
 Scripts used by J. Ryou, E.E. Benedict, and S. Paruthiyil for analysis and visualization of microbiome data from NICU-hospitalized preterm infants.
 
 Shell scripts include version numbers used for each specific tool and were all run on in the High Throughput Computing Facility computing environment. R code runs successfully on R versions 4.4.2 and later from Mac OS 14.5 and later.
 
-# Shell scripts: software versions used
+### Shell scripts: software versions used
 * Dorado v0.5.0
 * Samtools v1.14
 * Filtlong v0.2.0
@@ -31,4 +31,4 @@ Shell scripts include version numbers used for each specific tool and were all r
 * CenoteTaker3 v3.2.1
 * CheckV v1.5
 
-# R scripts: package versions used
+### R scripts: package versions used
