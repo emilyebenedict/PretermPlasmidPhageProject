@@ -16,7 +16,7 @@
 #SBATCH --output=slurm_out/polypolish/polypolish_%a_%A.out
 #SBATCH --error=slurm_out/polypolish/polypolish_%a_%A.err
 
-eval $( spack load --sh polypolish )
+eval $( spack load --sh polypolish@0.5.0 )
 
 basedir="$PWD"
 indir="${basedir}/d04_medaka_flye"
