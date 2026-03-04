@@ -20,7 +20,7 @@
 
 # There are multiple versions of metaphlan installed, which use different dbs
 # run "spack find py-metaphlan" to see all of them
-eval $( spack load --sh py-metaphlan )
+eval $( spack load --sh py-metaphlan@3.1.0 )
 
 basedir="$PWD"
 indir="${basedir}/d03_preterm_deconseq/repaired"
