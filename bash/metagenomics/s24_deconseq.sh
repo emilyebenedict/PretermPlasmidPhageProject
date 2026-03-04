@@ -18,7 +18,7 @@
 #SBATCH --output=slurm_out/deconseq/x_deconseq_%a.out
 #SBATCH --error=slurm_out/deconseq/y_deconseq_%a.err
 
-eval $( spack load --sh deconseq-standalone ) 
+eval $( spack load --sh deconseq-standalone@1.0.1 ) 
 
 #store the base directory
 basedir="$PWD"
