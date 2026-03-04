@@ -17,7 +17,7 @@
 #SBATCH --mail-user=ebenedict@wustl.edu
 #SBATCH --mail-type=END
 
-eval $( spack load --sh fastani )
+eval $( spack load --sh fastani@1.33 )
 
 basedir="$PWD"
 indir="${basedir}/d08_pilot_r1_r3_r4_plasmids"
