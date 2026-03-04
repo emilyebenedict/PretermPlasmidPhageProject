@@ -17,7 +17,7 @@
 #SBATCH --output=slurm_out/metaphlan_merge/merge_%a_%A.out
 #SBATCH --error=slurm_out/metaphlan_merge/merge_%a_%A.out
 
-eval $( spack load --sh py-metaphlan@4.0.2 )
+eval $( spack load --sh py-metaphlan@3.1.0 )
 
 basedir="$PWD"
 indir="${basedir}/metaphlan_all"
