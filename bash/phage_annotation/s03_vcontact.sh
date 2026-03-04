@@ -16,15 +16,15 @@
 #SBATCH --error=slurm/vcontact/y_vcontact2_%A.out
 
 
-eval $( spack load --sh miniconda3 )
+eval $( spack load --sh miniconda3@4.10.3 )
 CONDA_BASE=$(conda info --base)
 source $CONDA_BASE/etc/profile.d/conda.sh
 
 # activate env
-conda activate /home/kailun/conda/vContact2
+conda activate /home/kailun/conda/vContact2 # version 0.9.19
 
 #module load openjdk
-eval $( spack load --sh openjdk )
+eval $( spack load --sh openjdk@11.0.15_10 )
 
 basedir="/scratch/gdlab/p.sri/250113_P4Pipeline/250113_CT3/"
 
