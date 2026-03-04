@@ -20,7 +20,7 @@
 eval $( spack load --sh /buvzc6u ) # miniconda3@4.10.3
 CONDA_BASE=$(conda info --base)
 source $CONDA_BASE/etc/profile.d/conda.sh
-source activate /ref/gdlab/software/envs/Mamba/Mambaforge-Linux-x86_64/envs/ct3_env
+source activate /ref/gdlab/software/envs/Mamba/Mambaforge-Linux-x86_64/envs/ct3_env # version 3.2.1
 
 basedir="/scratch/gdlab/p.sri/250113_P4Pipeline"
 indir="/lts/gdlab/users/current/ebenedict/p4/allrounds_polished_assemblies"
