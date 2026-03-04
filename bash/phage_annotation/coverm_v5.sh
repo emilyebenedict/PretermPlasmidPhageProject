@@ -25,7 +25,7 @@ CONDA_BASE=$(conda info --base)
 
 source $CONDA_BASE/etc/profile.d/conda.sh
 
-conda activate /home/gmark/conda_env/coverM
+conda activate /home/gmark/conda_env/coverM # version 0.7.0
 
 
 basedir="/scratch/gdlab/p.sri/250113_P4Pipeline/"
