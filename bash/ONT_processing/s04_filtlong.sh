@@ -21,7 +21,7 @@
 #SBATCH --mail-user=ebenedict@wustl.edu
 #SBATCH --mail-type=END
 
-eval $( spack load --sh filtlong )
+eval $( spack load --sh filtlong@0.2.0 )
 
 basedir="$PWD"
 input_dir="${basedir}/d01_dorado/fastqs"
