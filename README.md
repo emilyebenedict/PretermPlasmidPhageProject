@@ -59,7 +59,6 @@ Available data is found in the "R" directory as supplementary tables.
 * tidytext v0.4.3
 * randomForest v4.7.1.2
 * NatParksPalettes v0.2.0
-* EVERY PACKAGE ABOVE THIS LINE IS FINAL (JIAN)
 * tidyverse v2.0.0
 * reshape2 v1.4.4
 * RColorBrewer v1.1-3
@@ -70,29 +69,11 @@ Available data is found in the "R" directory as supplementary tables.
 * ggnewscale 0.5.0
 * lubridate v1.9.3
 * qgraph v1.9.8
+* KEGGREST 1.44.1
+* lmerTest v3.1-3
 * scales v1.3.0
 * plyr v1.8.9
 * nlme 3.1-166
-* data.table v1.16.2
 * lmerTest v3.1-3
-* ape v5.7.1
-* microViz v0.12.0
-* ggside v0.3.1
-* patchwork 1.2
-* ComplexHeatmap v2.14.0
-* readr v2.1.5
-* cowplot v1.1.2
-* Boruta v8.0.0
-* caret v6.0-94
-* VIM v6.2.2
-* corpcor v1.6.10
-* corrplot v0.95
-* Hmisc v5.2-2
-* microbiome v
-* broom v1.0.7
-* MuMIn v
-* lattice 0.22-6
-* xtable v1.8-4
-* parallel v4.4.0
-* KEGGREST 1.44.1
+* data.table v1.16.2
 
