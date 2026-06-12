@@ -19,7 +19,7 @@
 eval $(spack load --sh plasmidfinder)
 
 basedir="$PWD"
-indir="${basedir}/d04_spades"
+indir="${basedir}/finalized_assemblies"
 outdir="${basedir}/d13_plasmidfinder"
 
 sample=`sed -n ${SLURM_ARRAY_TASK_ID}p ${basedir}/all_seq_list.txt`
