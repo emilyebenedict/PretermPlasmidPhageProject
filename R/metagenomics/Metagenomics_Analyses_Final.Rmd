@@ -35,7 +35,7 @@ library(ggExtra) #v.0.11.0
 source("GM_development_functions.R")
 source("~/Documents/GitHub/Preterm_Plasmidome/GM_development/customtab.R")
 
-meta_data_path <- "~/Documents/GitHub/PretermPlasmidPhageProject/R/metagenomics/Metadata/260810_P4_GM_Dev_metadata_nterm_update_v3.xlsx"
+meta_data_path <- "~/Documents/GitHub/PretermPlasmidPhageProject/R/metagenomics/260816_supplementarytable1_metadata.xlsx"
 
 
 cat_var <- c("Sample_ID", "Patient", "Cohort", "Study","abx_group_updated", "BSI_exp_type", "Necrotizing_enterocolitis", "Received_antimicrobials", "Sex","Delivery_route","Maternal_ethnicity","Maternal_race","Site","Final_disposition",
